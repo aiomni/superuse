@@ -72,8 +72,8 @@ final class ScrollCaptureSession {
         let controls = UI.stack([
             UI.label("缓慢向下滚动，停稳后自动拼接", size: 14, weight: .medium), status,
             UI.stack([pause,
-                      ActionButton("取消", style: .toolbar) { [weak self] in self?.cancel() },
-                      ActionButton("完成截图", symbol: "checkmark", style: .toolbar) { [weak self] in self?.finish() }], axis: .horizontal),
+                      ActionButton("取消", symbol: "xmark", symbolColor: .systemRed, style: .toolbar) { [weak self] in self?.cancel() },
+                      ActionButton("完成截图", symbol: "checkmark", symbolColor: .systemGreen, style: .toolbar) { [weak self] in self?.finish() }], axis: .horizontal),
         ], spacing: 8)
         panel.contentView = UI.glassBar(controls, radius: 20, inset: 16)
         if let screen = NSScreen.screens.first(where: {

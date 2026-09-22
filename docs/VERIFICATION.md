@@ -14,6 +14,7 @@
 - 在无本机签名配置的临时目录执行打包脚本：缺少签名身份或显式指定 `SIGNING_IDENTITY=-` 均在构建前失败，不会退回临时签名。
 - `plutil -lint dist/superuse.app/Contents/Info.plist`、`git diff --check`：通过。
 - 布局测试覆盖亮色、暗色、高对比度亮色 / 暗色，在较小窗口尺寸检查设置页宽度、分组边界、剪贴板列表高度和截图工具栏边界。测试只覆盖窗口的 appearance，不修改系统外观设置。
+- 工具条悬停与图标颜色调整后，完整回归和四种外观渲染通过。独立预览应用复用真实截图控制器、测试图片和隔离剪贴板，确认原生窗口中的红色取消 / 绿色完成图标及编辑展开。悬停使用 AppKit 原生 `showsBorderOnlyWhileMouseInside`；界面工具的坐标操作返回 `noWindowsAvailable`，尚未确认真实鼠标悬停高亮。
 - 更名后 `CFBundleName`、`CFBundleDisplayName`、可执行文件和应用包名均为 `superuse`；Bundle ID 仍为 `app.suse.mac`，签名 requirement 仍绑定原证书 `<LOCAL_CERTIFICATE_SHA1>`。
 - 没有 SwiftUI import，没有第三方包依赖。
 

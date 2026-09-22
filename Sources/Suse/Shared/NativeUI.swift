@@ -167,7 +167,8 @@ final class ActionButton: NSButton {
     enum Style { case standard, glass, toolbar }
     private var actionHandler: () -> Void
 
-    init(_ title: String, symbol: String? = nil, style: Style = .standard, action: @escaping () -> Void) {
+    init(_ title: String, symbol: String? = nil, symbolColor: NSColor? = nil,
+         style: Style = .standard, action: @escaping () -> Void) {
         self.actionHandler = action
         super.init(frame: .zero)
         self.title = title
@@ -179,19 +180,21 @@ final class ActionButton: NSButton {
         case .glass: bezelStyle = .glass
         case .toolbar:
             bezelStyle = .toolbar
-            isBordered = false
+            isBordered = true
+            showsBorderOnlyWhileMouseInside = true
         }
         if let symbol {
             image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             imagePosition = .imageLeading
+            if let symbolColor { symbolConfiguration = .init(paletteColors: [symbolColor]) }
         }
         target = self
         self.action = #selector(invoke)
         setAccessibilityLabel(title)
     }
 
-    convenience init(icon title: String, symbol: String, action: @escaping () -> Void) {
-        self.init(title, symbol: symbol, style: .toolbar, action: action)
+    convenience init(icon title: String, symbol: String, symbolColor: NSColor? = nil, action: @escaping () -> Void) {
+        self.init(title, symbol: symbol, symbolColor: symbolColor, style: .toolbar, action: action)
         imagePosition = .imageOnly
         toolTip = title
         widthAnchor.constraint(equalToConstant: 32).isActive = true
