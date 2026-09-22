@@ -151,11 +151,6 @@ final class AnnotationCanvas: NSView {
         needsDisplay = true
     }
 
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { draft = nil; needsDisplay = true }
-        else { super.keyDown(with: event) }
-    }
-
     func addText(_ text: String, at point: CGPoint) {
         guard !text.isEmpty else { return }
         replaceAnnotations(annotations + [Annotation(tool: .text, points: [point], color: ink, width: lineWidth, text: text)])

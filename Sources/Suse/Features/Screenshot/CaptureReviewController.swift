@@ -89,12 +89,12 @@ final class CaptureReviewController: NSViewController {
         let save = ActionButton("保存…", symbol: "square.and.arrow.down", style: .toolbar) { [weak self] in self?.saveImage() }
         save.keyEquivalent = "s"
         save.keyEquivalentModifierMask = [.command]
+        let cancel = ActionButton(icon: "取消", symbol: "xmark", symbolColor: .systemRed) { [weak self] in self?.onAction?(.done) }
+        cancel.toolTip = "取消截图（Esc）"
         let actions = UI.stack([
             scrolling, edit,
             ActionButton("重选", symbol: "crop", style: .toolbar) { [weak self] in self?.onAction?(.reselect) },
-            save,
-            ActionButton(icon: "取消", symbol: "xmark", symbolColor: .systemRed) { [weak self] in self?.onAction?(.done) },
-            copy,
+            save, cancel, copy,
         ], axis: .horizontal, spacing: 8)
         status.usesSingleLineMode = true
         status.lineBreakMode = .byTruncatingTail
@@ -134,10 +134,16 @@ final class CaptureReviewController: NSViewController {
         let widths = NSSegmentedControl(labels: ["细", "中", "粗"], trackingMode: .selectOne,
                                         target: self, action: #selector(widthChanged(_:)))
         widths.selectedSegment = 1
+        let undo = ActionButton(icon: "撤销", symbol: "arrow.uturn.backward") { [weak self] in self?.canvas.undoManager?.undo() }
+        undo.keyEquivalent = "z"
+        undo.keyEquivalentModifierMask = [.command]
+        undo.toolTip = "撤销（⌘Z）"
+        let redo = ActionButton(icon: "重做", symbol: "arrow.uturn.forward") { [weak self] in self?.canvas.undoManager?.redo() }
+        redo.keyEquivalent = "Z"
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        redo.toolTip = "重做（⇧⌘Z）"
         return UI.stack([
-            toolPicker, colorWell, widths,
-            ActionButton(icon: "撤销", symbol: "arrow.uturn.backward") { [weak self] in self?.canvas.undoManager?.undo() },
-            ActionButton(icon: "重做", symbol: "arrow.uturn.forward") { [weak self] in self?.canvas.undoManager?.redo() },
+            toolPicker, colorWell, widths, undo, redo,
             ActionButton(icon: "清除标注", symbol: "trash") { [weak self] in self?.canvas.clear() },
         ], axis: .horizontal, spacing: 8)
     }

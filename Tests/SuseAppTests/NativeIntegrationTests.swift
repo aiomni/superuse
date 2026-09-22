@@ -210,6 +210,107 @@ struct NativeIntegrationTests {
         }
     }
 
+    @Test(arguments: [false, true])
+    func screenshotEditingEscapeExitsWithoutCopying(focusOnControl: Bool) throws {
+        let fixture = try keyboardReview()
+        defer { fixture.pasteboard.releaseGlobally() }
+        fixture.pasteboard.setString("keep clipboard", forType: .string)
+        fixture.canvas.addText("A", at: CGPoint(x: 12, y: 4))
+        var cancelled = 0
+        fixture.window.onCancel = { cancelled += 1 }
+        #expect(fixture.window.makeFirstResponder(focusOnControl ? fixture.edit : fixture.canvas))
+
+        fixture.window.sendEvent(try keyEvent(in: fixture.window, code: 53, characters: "\u{1b}"))
+
+        #expect(cancelled == 1)
+        #expect(fixture.pasteboard.string(forType: .string) == "keep clipboard")
+    }
+
+    @Test(arguments: [false, true])
+    func screenshotEditingShortcutsUndoAndRedoAnnotations(focusOnControl: Bool) throws {
+        let fixture = try keyboardReview()
+        defer { fixture.pasteboard.releaseGlobally() }
+        let undo = try keyEvent(in: fixture.window, code: 6, characters: "z", modifiers: [.command])
+        let redo = try keyEvent(in: fixture.window, code: 6, characters: "Z", modifiers: [.command, .shift])
+        fixture.canvas.addText("A", at: CGPoint(x: 12, y: 4))
+        let annotated = pixels(try fixture.canvas.renderedImage())
+        #expect(fixture.window.makeFirstResponder(focusOnControl ? fixture.edit : fixture.canvas))
+
+        fixture.window.sendEvent(undo)
+        #expect(fixture.canvas.annotationCount == 0)
+        #expect(pixels(try fixture.canvas.renderedImage()) == pixels(colorFixture()))
+        #expect(fixture.window.performKeyEquivalent(with: redo))
+        #expect(fixture.canvas.annotationCount == 1)
+        #expect(pixels(try fixture.canvas.renderedImage()) == annotated)
+
+        fixture.window.sendEvent(undo)
+        fixture.window.sendEvent(undo)
+        #expect(fixture.canvas.annotationCount == 0)
+        fixture.canvas.addText("B", at: CGPoint(x: 40, y: 4))
+        let newEdit = pixels(try fixture.canvas.renderedImage())
+        fixture.window.sendEvent(redo)
+        #expect(pixels(try fixture.canvas.renderedImage()) == newEdit)
+        let modifiedUndo = try keyEvent(in: fixture.window, code: 6, characters: "z", modifiers: [.command, .option])
+        #expect(!fixture.window.performKeyEquivalent(with: modifiedUndo))
+        #expect(pixels(try fixture.canvas.renderedImage()) == newEdit)
+        fixture.edit.performClick(nil)
+        #expect(!fixture.window.performKeyEquivalent(with: undo))
+        #expect(pixels(try fixture.canvas.renderedImage()) == newEdit)
+    }
+
+    @Test func screenshotShortcutsLeaveTextInputAndSheetsAlone() throws {
+        let fixture = try keyboardReview()
+        defer { fixture.pasteboard.releaseGlobally() }
+        fixture.canvas.addText("A", at: CGPoint(x: 12, y: 4))
+        var cancelled = false
+        fixture.window.onCancel = { cancelled = true }
+        let undo = try keyEvent(in: fixture.window, code: 6, characters: "z", modifiers: [.command])
+        let escape = try keyEvent(in: fixture.window, code: 53, characters: "\u{1b}")
+        let text = NSTextView(frame: CGRect(x: 0, y: 0, width: 200, height: 40))
+        fixture.controller.view.addSubview(text)
+        #expect(fixture.window.makeFirstResponder(text))
+        _ = fixture.window.performKeyEquivalent(with: undo)
+        #expect(fixture.canvas.annotationCount == 1)
+        text.removeFromSuperview()
+        fixture.window.makeFirstResponder(fixture.canvas)
+
+        let sheet = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 300, height: 120),
+                             styleMask: .titled, backing: .buffered, defer: false)
+        fixture.window.beginSheet(sheet)
+        defer { fixture.window.endSheet(sheet); sheet.orderOut(nil) }
+        #expect(fixture.window.attachedSheet === sheet)
+        _ = fixture.window.performKeyEquivalent(with: undo)
+        _ = fixture.window.performKeyEquivalent(with: escape)
+        fixture.window.cancelOperation(nil)
+        #expect(fixture.canvas.annotationCount == 1)
+        #expect(!cancelled)
+    }
+
+    private func keyboardReview() throws -> (controller: CaptureReviewController, window: SelectionWindow,
+                                              canvas: AnnotationCanvas, edit: NSButton, pasteboard: NSPasteboard) {
+        _ = NSApplication.shared
+        let size = CGSize(width: 1200, height: 800)
+        let pasteboard = NSPasteboard.withUniqueName()
+        let controller = CaptureReviewController(image: colorFixture(), selectionRect: CGRect(x: 300, y: 150, width: 480, height: 320),
+                                                 displaySize: size, allowsScrolling: true, pasteboard: pasteboard)
+        let window = SelectionWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless,
+                                     backing: .buffered, defer: false)
+        window.contentViewController = controller
+        window.handleReviewKey = { [weak controller] in controller?.view.performKeyEquivalent(with: $0) ?? false }
+        let views = descendants(of: controller.view)
+        let canvas = try #require(views.first { $0 is AnnotationCanvas } as? AnnotationCanvas)
+        let edit = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "编辑" })
+        edit.performClick(nil)
+        return (controller, window, canvas, edit, pasteboard)
+    }
+
+    private func keyEvent(in window: NSWindow, code: UInt16, characters: String,
+                          modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+                                     windowNumber: window.windowNumber, context: nil, characters: characters,
+                                     charactersIgnoringModifiers: characters, isARepeat: false, keyCode: code))
+    }
+
     @Test func selectionWaitsForMouseUpAndRetainsTheOverlay() throws {
         _ = NSApplication.shared
         let frame = CGRect(x: 0, y: 0, width: 1200, height: 800)

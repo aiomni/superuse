@@ -39,6 +39,8 @@ For building the app from source, see the [development guide](DEV.md).
 3. Use the toolbar to annotate, start a scrolling capture, change the selection, save, or copy.
 4. Press **Return** to copy and finish, **Shift + Command + C** to copy and keep editing, **Command + S** to save, or **Esc** to cancel.
 
+While annotating, use **Command + Z** to undo and **Shift + Command + Z** to redo. **Esc** exits the screenshot even while the canvas or an editing control has focus. In a text-entry or save dialog, the dialog handles its own keyboard shortcuts.
+
 By default, confirming a selection also copies the original screenshot. Turn off automatic copying in screenshot settings if you prefer to edit first.
 
 Screenshots work across multiple-monitor setups, with each selection staying on one display. Window captures include the visible part of the window, without its shadow.

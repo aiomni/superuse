@@ -8,19 +8,43 @@ struct CaptureSelection {
 }
 
 @MainActor
-private final class SelectionWindow: NSWindow {
+final class SelectionWindow: NSWindow {
     var onCancel: (() -> Void)?
+    var handleReviewKey: ((NSEvent) -> Bool)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
 
+    override func sendEvent(_ event: NSEvent) {
+        if handleScreenshotKey(event) { return }
+        super.sendEvent(event)
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if event.keyCode == 53 { onCancel?(); return true }
+        guard acceptsScreenshotKeys else { return false }
+        if handleScreenshotKey(event) { return true }
         return super.performKeyEquivalent(with: event)
     }
 
-    override func cancelOperation(_ sender: Any?) { onCancel?() }
+    override func cancelOperation(_ sender: Any?) {
+        guard attachedSheet == nil else { return }
+        onCancel?()
+    }
+
+    private var acceptsScreenshotKeys: Bool {
+        attachedSheet == nil && !(firstResponder is NSTextView)
+    }
+
+    private func handleScreenshotKey(_ event: NSEvent) -> Bool {
+        guard event.type == .keyDown, acceptsScreenshotKeys else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+        if event.keyCode == 53 && modifiers.isEmpty {
+            onCancel?()
+            return true
+        }
+        return handleReviewKey?(event) ?? false
+    }
 }
 
 /// Keeps the original display snapshots on screen through selection and review.
@@ -75,6 +99,9 @@ final class SelectionController {
         let controller = CaptureReviewController(image: image, selectionRect: rect,
                                                  displaySize: view.bounds.size, allowsScrolling: allowsScrolling)
         reviewController = controller
+        window.handleReviewKey = { [weak controller] in
+            controller?.view.performKeyEquivalent(with: $0) ?? false
+        }
         controller.onAction = { [weak self] action in
             guard let self else { return }
             let completion = reviewCompletion
