@@ -22,7 +22,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem?.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: AppIdentity.name)
         buildStatusMenu()
-        showDashboard()
+        if !AppLaunchContext.isLoginItem(NSAppleEventManager.shared().currentAppleEvent) {
+            showDashboard()
+        }
     }
 
     private func configureFeatures() {

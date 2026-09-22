@@ -18,6 +18,7 @@ superuse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**
 
 - `SuseCore`：可测试的数据模型、纯算法，与 AppKit 生命周期隔离。
 - `App`：组合根、菜单栏、工具箱、统一设置窗口。
+- `LoginItemSettingsView` 通过 `SMAppService.mainApp` 管理当前应用的登录项，以系统状态为准，不另存 UserDefaults 开关；注册失败恢复实际状态，等待批准时提供系统设置入口。`LoginItemService` 隔离系统调用，测试替身不会注册真实登录项。`AppLaunchContext` 识别系统登录启动事件，保留菜单栏功能并跳过工具箱自动展示。
 - `Shared`：功能接口、快捷键注册、设置存储和少量原生 UI 工具。
 - `Features/Clipboard`、`Features/Screenshot`：各自持有状态、UI、服务，不相互调用。
 - 功能通过 `FeatureModule` 提供命令和设置页。共享层不感知具体功能。

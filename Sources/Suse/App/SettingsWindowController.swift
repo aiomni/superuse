@@ -120,6 +120,7 @@ final class SettingsWindowController: NSWindowController, NSTableViewDataSource,
         let accessibility = permissionRow("辅助功能", subtitle: "用于将历史内容粘贴回原应用。",
                                           symbol: "hand.point.up.left", destination: "Privacy_Accessibility")
         return UI.settingsPage("通用", subtitle: "从菜单栏或快捷键访问你的工具。", controls: [
+            UI.groupedRows([LoginItemSettingsView()]),
             UI.section(UI.stack([
                 UI.label("常驻菜单栏", size: 14, weight: .semibold),
                 UI.label("关闭窗口后，\(AppIdentity.name) 仍在运行。使用 ⌃⌥Space 打开工具箱，或从菜单栏选择功能。", color: .secondaryLabelColor),

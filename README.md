@@ -35,6 +35,8 @@ SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build-app.sh 
 
 应用已从 Suse 更名为 **superuse**。构建产物和菜单使用新名称；Bundle ID `app.suse.mac`、设置键、历史数据目录以及 `Suse Local Development` 签名证书保持不变，以兼容旧版数据与授权身份。内部 Swift 模块名仍为 `Suse` / `SuseCore`。
 
+在“设置 → 通用”开启 **开机启动**，即可在登录 Mac 后自动驻留菜单栏，自动启动时不弹出工具箱。手动打开应用仍显示工具箱。此选项通过 macOS 原生登录项管理，打开设置不会自动启用；系统要求批准时，点击“打开登录项设置”完成允许，返回应用后状态自动刷新。开关关闭或更新失败时，以系统实际状态为准。建议从固定安装位置的 `superuse.app` 启用。
+
 ## 默认快捷键
 
 | 快捷键 | 功能 |
