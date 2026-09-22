@@ -108,17 +108,29 @@ struct InterfaceLayoutTests {
             let edit = try #require(descendants(container).compactMap { $0 as? NSButton }.first { $0.title == "编辑" })
             controller.view.layoutSubtreeIfNeeded()
             let editFrame = controller.view.convert(edit.bounds, from: edit)
+            try expectCompactImageTitleSpacing(edit)
             edit.performClick(nil)
             controller.view.layoutSubtreeIfNeeded()
             #expect(controller.view.bounds.contains(container.frame))
             #expect(!selection.intersects(container.frame))
             #expect(controller.view.convert(edit.bounds, from: edit) == editFrame)
+            try expectCompactImageTitleSpacing(edit)
             try render(window, named: "capture-edit-\(name)")
         }
     }
 
     private func descendants(_ view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants($0) }
+    }
+
+    private func expectCompactImageTitleSpacing(_ button: NSButton) throws {
+        let cell = try #require(button.cell as? NSButtonCell)
+        let imageRect = cell.imageRect(forBounds: button.bounds)
+        let titleRect = cell.titleRect(forBounds: button.bounds)
+        // The centered text can be narrower than the space allocated by the cell.
+        let textWidth = button.attributedTitle.size().width
+        let gap = titleRect.midX - textWidth / 2 - imageRect.maxX
+        #expect(gap >= 0 && gap <= 6)
     }
 
     private func screenshotFixture(size: CGSize) -> CGImage {

@@ -186,6 +186,7 @@ final class ActionButton: NSButton {
         if let symbol {
             image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             imagePosition = .imageLeading
+            imageHugsTitle = true
             if let symbolColor { symbolConfiguration = .init(paletteColors: [symbolColor]) }
         }
         target = self

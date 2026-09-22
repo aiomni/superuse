@@ -16,6 +16,7 @@
 - `plutil -lint dist/superuse.app/Contents/Info.plist`、`git diff --check`：通过。
 - 布局测试覆盖亮色、暗色、高对比度亮色 / 暗色，在较小窗口尺寸检查设置页宽度、分组边界、剪贴板列表高度和截图工具栏边界。测试只覆盖窗口的 appearance，不修改系统外观设置。
 - 工具条悬停与图标颜色调整后，完整回归和四种外观渲染通过。独立预览应用复用真实截图控制器、测试图片和隔离剪贴板，确认原生窗口中的红色取消 / 绿色完成图标及编辑展开。悬停使用 AppKit 原生 `showsBorderOnlyWhileMouseInside`；界面工具的坐标操作返回 `noWindowsAvailable`，尚未确认真实鼠标悬停高亮。
+- 编辑按钮图文间距修复后，完整回归通过。布局测试检查四种外观下“编辑”和“完成标注”的图标到文字间距，并保留按钮外框位置不变的断言；新增检查在旧实现上失败。独立原生预览中确认两种状态的图文紧凑排列及切换后工具条位置稳定。本次未执行真实桌面截图或鼠标悬停验收。
 - 更名后 `CFBundleName`、`CFBundleDisplayName`、可执行文件和应用包名均为 `superuse`；Bundle ID 仍为 `app.suse.mac`，签名 requirement 仍绑定原证书（本机证书指纹不公开）。
 - 没有 SwiftUI import，没有第三方包依赖。
 
