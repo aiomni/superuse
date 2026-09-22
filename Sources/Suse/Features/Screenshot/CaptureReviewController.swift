@@ -78,7 +78,7 @@ final class CaptureReviewController: NSViewController {
         let scrolling = ActionButton("滚动截图", symbol: "scroll", style: .toolbar) { [weak self] in self?.onAction?(.scroll) }
         scrolling.isHidden = !allowsScrolling
         scrollButton = scrolling
-        let copy = ActionButton("复制并完成", symbol: "checkmark", style: .glass) { [weak self] in self?.copyImage(completing: true) }
+        let copy = ActionButton("复制并完成", symbol: "checkmark", style: .toolbar) { [weak self] in self?.copyImage(completing: true) }
         copy.keyEquivalent = "\r"
         copy.keyEquivalentModifierMask = []
         let save = ActionButton("保存…", symbol: "square.and.arrow.down", style: .toolbar) { [weak self] in self?.saveImage() }
@@ -89,12 +89,13 @@ final class CaptureReviewController: NSViewController {
             ActionButton("重选", symbol: "crop", style: .toolbar) { [weak self] in self?.onAction?(.reselect) },
             save,
             ActionButton(icon: "取消", symbol: "xmark") { [weak self] in self?.onAction?(.done) },
+            copy,
         ], axis: .horizontal, spacing: 8)
         let palette = UI.glassBar(makePalette())
         palette.isHidden = true
         self.palette = palette
         let mainBar = UI.glassBar(UI.stack([actions, status], spacing: 5))
-        let content = UI.stack([palette, UI.stack([mainBar, copy], axis: .horizontal, spacing: 10)], spacing: 8)
+        let content = UI.stack([palette, mainBar], spacing: 8)
         content.alignment = .trailing
         let container = UI.glassContainer(content)
         view.addSubview(container)
