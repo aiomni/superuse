@@ -20,15 +20,15 @@ final class ScreenshotModule: FeatureModule {
     init(settings: SettingsStore) { self.settings = settings }
 
     var commands: [AppCommand] {
-        [command("fullScreen", title: "全屏截图", symbol: "rectangle.inset.filled", key: 18, mode: .fullScreen),
-         command("region", title: "区域截图", symbol: "crop", key: 19, mode: .region),
-         command("window", title: "窗口截图", symbol: "macwindow", key: 20, mode: .window),
-         command("scroll", title: "滚动截图", symbol: "scroll", key: 21, mode: .scroll)]
+        [command("fullScreen", title: "全屏截图", symbol: "rectangle.inset.filled", shortcut: Shortcut(keyCode: 18), mode: .fullScreen),
+         command("region", title: "区域截图", symbol: "crop", shortcut: Shortcut(keyCode: 0, modifiers: [.shift, .command]), mode: .region),
+         command("window", title: "窗口截图", symbol: "macwindow", shortcut: Shortcut(keyCode: 20), mode: .window),
+         command("scroll", title: "滚动截图", symbol: "scroll", shortcut: Shortcut(keyCode: 21), mode: .scroll)]
     }
 
-    private func command(_ id: String, title: String, symbol: String, key: UInt32, mode: Mode) -> AppCommand {
+    private func command(_ id: String, title: String, symbol: String, shortcut: Shortcut, mode: Mode) -> AppCommand {
         AppCommand(id: "screenshot.\(id)", title: title, group: self.title, symbol: symbol,
-                   defaultShortcut: Shortcut(keyCode: key)) { [weak self] in self?.begin(mode) }
+                   defaultShortcut: shortcut) { [weak self] in self?.begin(mode) }
     }
 
     func start() { }

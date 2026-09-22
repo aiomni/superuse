@@ -29,7 +29,7 @@ SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build-app.sh 
 | --- | --- |
 | ⌃⌥Space | 打开工具箱 |
 | ⌃⌥1 | 全屏截图，捕获鼠标所在显示器 |
-| ⌃⌥2 | 区域截图 |
+| ⇧⌘A | 区域截图 |
 | ⌃⌥3 | 自动选择窗口截图 |
 | ⌃⌥4 | 开始滚动截图；再次按下完成 |
 | ⌃⌥V | 显示 / 隐藏剪贴板历史 |
