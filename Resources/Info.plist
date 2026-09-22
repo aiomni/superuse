@@ -5,6 +5,7 @@
     <key>CFBundleDisplayName</key><string>Suse</string>
     <key>CFBundleIdentifier</key><string>app.suse.mac</string>
     <key>CFBundleExecutable</key><string>Suse</string>
+    <key>CFBundleIconFile</key><string>Suse</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
