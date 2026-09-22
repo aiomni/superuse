@@ -103,10 +103,16 @@ struct InterfaceLayoutTests {
             let canvas = try #require(descendants(controller.view).first { $0 is AnnotationCanvas })
             #expect(!canvas.isDescendant(of: container))
             #expect(controller.view.bounds.contains(container.frame))
+            #expect(!selection.intersects(container.frame))
             try render(window, named: "capture-\(name)")
             let edit = try #require(descendants(container).compactMap { $0 as? NSButton }.first { $0.title == "编辑" })
+            controller.view.layoutSubtreeIfNeeded()
+            let editFrame = controller.view.convert(edit.bounds, from: edit)
             edit.performClick(nil)
+            controller.view.layoutSubtreeIfNeeded()
             #expect(controller.view.bounds.contains(container.frame))
+            #expect(!selection.intersects(container.frame))
+            #expect(controller.view.convert(edit.bounds, from: edit) == editFrame)
             try render(window, named: "capture-edit-\(name)")
         }
     }

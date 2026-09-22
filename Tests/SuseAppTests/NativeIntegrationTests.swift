@@ -152,6 +152,64 @@ struct NativeIntegrationTests {
         }
     }
 
+    @Test(arguments: [
+        CGRect(x: 300, y: 150, width: 480, height: 320),
+        CGRect(x: 300, y: 300, width: 600, height: 440),
+        CGRect(x: 300, y: 100, width: 600, height: 640),
+        CGRect(x: 300, y: 20, width: 600, height: 670),
+        CGRect(x: 0, y: 0, width: 1200, height: 800),
+        CGRect(x: 0, y: 0, width: 30, height: 20),
+        CGRect(x: 0, y: 760, width: 30, height: 20),
+        CGRect(x: 1160, y: 760, width: 30, height: 20),
+    ], [true, false])
+    func reviewKeepsActionBarAnchoredWhenEditing(selection: CGRect, allowsScrolling: Bool) throws {
+        _ = NSApplication.shared
+        let size = CGSize(width: 1200, height: 800)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let controller = CaptureReviewController(image: colorFixture(), selectionRect: selection,
+                                                 displaySize: size, allowsScrolling: allowsScrolling, pasteboard: pasteboard)
+        let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.contentViewController = controller
+        let view = controller.view
+        view.layoutSubtreeIfNeeded()
+        let buttons = descendants(of: view).compactMap { $0 as? NSButton }
+        let edit = try #require(buttons.first { $0.title == "编辑" })
+        let bars = descendants(of: view).compactMap { $0 as? NSGlassEffectView }
+        let mainBar = try #require(bars.first { edit.isDescendant(of: $0) })
+        let palette = try #require(bars.first { $0 !== mainBar })
+        let actionButtons = buttons.filter { $0.isDescendant(of: mainBar) && !$0.isHidden }
+        let status = try #require(descendants(of: mainBar).compactMap { $0 as? NSTextField }.first)
+        let barFrame = view.convert(mainBar.bounds, from: mainBar)
+        let buttonFrames = actionButtons.map { view.convert($0.bounds, from: $0) }
+        #expect(view.bounds.contains(barFrame))
+
+        for _ in 0..<2 {
+            edit.performClick(nil)
+            view.layoutSubtreeIfNeeded()
+            #expect(!palette.isHidden)
+            let paletteFrame = view.convert(palette.bounds, from: palette)
+            #expect(view.bounds.contains(paletteFrame))
+            #expect(!paletteFrame.intersects(barFrame))
+            #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
+            #expect(actionButtons.map { view.convert($0.bounds, from: $0) } == buttonFrames)
+            controller.copyImage(completing: false)
+            view.layoutSubtreeIfNeeded()
+            #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
+            // A long save result must truncate instead of widening the controls.
+            status.stringValue = "已保存到 \(String(repeating: "截图文件", count: 30)).png"
+            view.layoutSubtreeIfNeeded()
+            #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
+
+            edit.performClick(nil)
+            view.layoutSubtreeIfNeeded()
+            #expect(palette.isHidden)
+            #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
+            #expect(actionButtons.map { view.convert($0.bounds, from: $0) } == buttonFrames)
+        }
+    }
+
     @Test func selectionWaitsForMouseUpAndRetainsTheOverlay() throws {
         _ = NSApplication.shared
         let frame = CGRect(x: 0, y: 0, width: 1200, height: 800)

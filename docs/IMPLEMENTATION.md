@@ -31,6 +31,7 @@ superuse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**
 - 设置使用 `NSSplitViewController` 的原生 sidebar item 和 `NSTableView.sourceList`。详情页可滚动，`NSBox` 分组配合系统语义颜色，开关使用 `NSSwitch`。
 - 工具箱和剪贴板使用 `NSToolbar`；剪贴板搜索使用 `NSSearchToolbarItem`，唤起面板后直接聚焦搜索。
 - `UI.section` 负责内容分组；`UI.glassBar` 只承载浮动操作；相邻玻璃控件置于同一个 `NSGlassEffectContainerView`。列表、图片画布和文本编辑器不叠加玻璃背景。
+- 截图操作栏首次布局按标注工具展开后的尺寸选择位置并固定锚点；选区下方有空间时向下展开，否则向上展开。编辑按钮预留两种标题的宽度，状态提示保持单行，避免切换编辑或更新提示时移动操作按钮。
 - 按钮使用 AppKit 原生 bezel style；图标按钮提供 tooltip 和无障碍名称。macOS 27 使用 `effectIsInteractive`，macOS 26 继续使用原生常规玻璃。
 - 界面中的应用名由 `AppIdentity` 读取 bundle display name。更名为 superuse 时保留旧 Bundle ID、偏好键与历史路径，不触发数据迁移；打包继续使用原有固定签名证书。
 

@@ -32,6 +32,8 @@ final class CaptureReviewController: NSViewController {
     private let colorWell = NSColorWell()
     private var toolbar: NSView?
     private var palette: NSView?
+    private var toolbarAnchor = CGPoint.zero
+    private var paletteExpandsDownward = false
     private var editButton: ActionButton?
     private var scrollButton: ActionButton?
     var onAction: ((CaptureReviewAction) -> Void)?
@@ -69,11 +71,14 @@ final class CaptureReviewController: NSViewController {
         scroll.layer?.borderColor = NSColor.controlAccentColor.cgColor
         view.addSubview(scroll)
         buildToolbar()
-        updateStatus()
     }
 
     private func buildToolbar() {
         let edit = ActionButton("编辑", symbol: "pencil.tip", style: .toolbar) { [weak self] in self?.toggleEditing() }
+        // Keep every action in place when the editing title changes.
+        edit.title = "完成标注"
+        edit.widthAnchor.constraint(equalToConstant: edit.fittingSize.width).isActive = true
+        edit.title = "编辑"
         editButton = edit
         let scrolling = ActionButton("滚动截图", symbol: "scroll", style: .toolbar) { [weak self] in self?.onAction?(.scroll) }
         scrolling.isHidden = !allowsScrolling
@@ -91,15 +96,20 @@ final class CaptureReviewController: NSViewController {
             ActionButton(icon: "取消", symbol: "xmark") { [weak self] in self?.onAction?(.done) },
             copy,
         ], axis: .horizontal, spacing: 8)
+        status.usesSingleLineMode = true
+        status.lineBreakMode = .byTruncatingTail
         let palette = UI.glassBar(makePalette())
-        palette.isHidden = true
         self.palette = palette
         let mainBar = UI.glassBar(UI.stack([actions, status], spacing: 5))
+        status.widthAnchor.constraint(equalTo: actions.widthAnchor).isActive = true
         let content = UI.stack([palette, mainBar], spacing: 8)
         content.alignment = .trailing
         let container = UI.glassContainer(content)
         view.addSubview(container)
         toolbar = container
+        updateStatus()
+        anchorToolbar(content: content, palette: palette)
+        palette.isHidden = true
         positionToolbar()
     }
 
@@ -132,20 +142,33 @@ final class CaptureReviewController: NSViewController {
         ], axis: .horizontal, spacing: 8)
     }
 
-    private func positionToolbar() {
+    private func anchorToolbar(content: NSStackView, palette: NSView) {
         guard let toolbar else { return }
+        // Choose a side once using the expanded size, before hiding the palette.
+        // The anchor is the main bar's right edge and its top or bottom edge.
         toolbar.layoutSubtreeIfNeeded()
         let size = toolbar.fittingSize
         let margin: CGFloat = 12
         let x = min(max(margin, selectionRect.maxX - size.width), max(margin, displaySize.width - size.width - margin))
-        let y: CGFloat
+        toolbarAnchor.x = x + size.width
         if selectionRect.maxY + margin + size.height <= displaySize.height - margin {
-            y = selectionRect.maxY + margin
+            paletteExpandsDownward = true
+            toolbarAnchor.y = selectionRect.maxY + margin
+            content.removeArrangedSubview(palette)
+            content.addArrangedSubview(palette)
         } else if selectionRect.minY - margin - size.height >= margin {
-            y = selectionRect.minY - margin - size.height
+            toolbarAnchor.y = selectionRect.minY - margin
         } else {
-            y = max(margin, displaySize.height - size.height - margin)
+            toolbarAnchor.y = max(margin + size.height, displaySize.height - margin)
         }
+    }
+
+    private func positionToolbar() {
+        guard let toolbar else { return }
+        toolbar.layoutSubtreeIfNeeded()
+        let size = toolbar.fittingSize
+        let x = toolbarAnchor.x - size.width
+        let y = paletteExpandsDownward ? toolbarAnchor.y : toolbarAnchor.y - size.height
         toolbar.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
     }
 
