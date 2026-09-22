@@ -26,7 +26,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
 
     private func configureFeatures() {
-        features = [ClipboardModule(settings: settings)]
+        features = [ScreenshotModule(settings: settings), ClipboardModule(settings: settings)]
     }
 
     func applicationWillTerminate(_ notification: Notification) {
