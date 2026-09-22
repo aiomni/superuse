@@ -10,6 +10,7 @@ struct CaptureSelection {
 @MainActor
 final class SelectionWindow: NSWindow {
     var onCancel: (() -> Void)?
+    var handleSelectionKey: ((NSEvent) -> Bool)?
     var handleReviewKey: ((NSEvent) -> Bool)?
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
@@ -37,7 +38,9 @@ final class SelectionWindow: NSWindow {
     }
 
     private func handleScreenshotKey(_ event: NSEvent) -> Bool {
-        guard event.type == .keyDown, acceptsScreenshotKeys else { return false }
+        guard acceptsScreenshotKeys else { return false }
+        if handleSelectionKey?(event) == true { return true }
+        guard event.type == .keyDown else { return false }
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
         if event.keyCode == 53 && modifiers.isEmpty {
             onCancel?()
@@ -58,6 +61,7 @@ final class SelectionController {
 
     func select(snapshots: [ScreenSnapshot], windows: [CaptureWindow]) async -> CaptureSelection? {
         close()
+        let inspector = CaptureColorInspector()
         return await withCheckedContinuation { continuation in
             selectionCompletion = continuation
             for snapshot in snapshots {
@@ -69,7 +73,12 @@ final class SelectionController {
                 window.acceptsMouseMovedEvents = true
                 window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
                 window.onCancel = { [weak self] in self?.cancel() }
-                let view = SelectionView(image: snapshot.image, displayFrame: snapshot.display.frame, windows: windows)
+                window.handleSelectionKey = { [weak self] event in
+                    let active = self?.overlays.first { $0.frame.contains(NSEvent.mouseLocation) }
+                    return (active?.contentView as? SelectionView)?.handleInspectionEvent(event) ?? false
+                }
+                let view = SelectionView(image: snapshot.image, displayFrame: snapshot.display.frame,
+                                         windows: windows, inspector: inspector)
                 view.onSelect = { [weak self] target in
                     self?.confirm(CaptureSelection(target: target, snapshot: snapshot))
                 }
@@ -138,6 +147,10 @@ final class SelectionController {
 final class SelectionView: NSView {
     private let image: NSImage
     private let displayFrame: CGRect
+    private let sampler: CapturePixelSampler
+    private let inspector: CaptureColorInspector
+    private let loupe: CaptureLoupeView
+    private var sampledPixel: CapturePixel?
     private var state: CaptureSelectionState
     private var frozen = false
     private var highlighted = false
@@ -148,12 +161,17 @@ final class SelectionView: NSView {
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { true }
 
-    init(image: CGImage, displayFrame: CGRect, windows: [CaptureWindow]) {
+    init(image: CGImage, displayFrame: CGRect, windows: [CaptureWindow],
+         inspector: CaptureColorInspector = CaptureColorInspector()) {
         self.image = NSImage(cgImage: image, size: displayFrame.size)
         self.displayFrame = displayFrame
+        self.inspector = inspector
+        sampler = CapturePixelSampler(image: image, displayFrame: displayFrame)
+        loupe = CaptureLoupeView(image: image)
         state = CaptureSelectionState(displayFrame: displayFrame, windows: windows)
         super.init(frame: CGRect(origin: .zero, size: displayFrame.size))
-        setAccessibilityLabel("截图选区。单击截取自动框选的屏幕或窗口；拖动选择区域；Escape 取消。")
+        addSubview(loupe)
+        setAccessibilityLabel("截图选区。单击确认，拖动选择区域；Shift 切换 RGB、HEX、HSL，Command C 复制色值；Escape 取消。")
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -177,6 +195,7 @@ final class SelectionView: NSView {
 
     func freeze() {
         frozen = true
+        loupe.isHidden = true
         highlighted = state.isConfirmed
         window?.invalidateCursorRects(for: self)
         needsDisplay = true
@@ -190,21 +209,50 @@ final class SelectionView: NSView {
         needsDisplay = true
     }
 
-    override func mouseEntered(with event: NSEvent) { updateHover() }
-    override func mouseMoved(with event: NSEvent) { updateHover() }
+    override func mouseEntered(with event: NSEvent) { updateHover(at: convert(event.locationInWindow, from: nil)) }
+    override func mouseMoved(with event: NSEvent) { updateHover(at: convert(event.locationInWindow, from: nil)) }
     override func mouseExited(with event: NSEvent) {
         guard !frozen else { return }
         highlighted = false
+        loupe.isHidden = true
         needsDisplay = true
     }
 
     private func updateHover() {
         guard !frozen, let window else { return }
         let point = window.convertPoint(fromScreen: NSEvent.mouseLocation)
-        let local = convert(point, from: nil)
+        updateHover(at: convert(point, from: nil))
+    }
+
+    private func updateHover(at local: CGPoint) {
+        guard !frozen else { return }
         highlighted = bounds.contains(local)
         state.hover(at: quartzPoint(local))
+        updateLoupe(at: local)
         needsDisplay = true
+    }
+
+    private func updateLoupe(at local: CGPoint) {
+        sampledPixel = sampler.sample(at: quartzPoint(local))
+        loupe.isHidden = frozen || !highlighted
+        guard let sampledPixel, !loupe.isHidden else { return }
+        loupe.update(sample: sampledPixel, format: inspector.format, kind: state.target.kind)
+        loupe.follow(local, in: bounds)
+    }
+
+    func handleInspectionEvent(_ event: NSEvent) -> Bool {
+        guard !frozen, highlighted,
+              let action = inspector.handle(event, sample: sampledPixel) else { return false }
+        let feedback: String?
+        switch action {
+        case .formatChanged: feedback = nil
+        case .copied: feedback = "已复制 \(inspector.format.rawValue) 色值"
+        case .copyFailed: feedback = "复制失败，请重试"
+        }
+        if let sampledPixel {
+            loupe.update(sample: sampledPixel, format: inspector.format, kind: state.target.kind, feedback: feedback)
+        }
+        return true
     }
 
     private func quartzPoint(_ local: CGPoint) -> CGPoint {
@@ -214,14 +262,18 @@ final class SelectionView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard !frozen else { return }
         window?.makeKey()
-        state.mouseDown(at: quartzPoint(convert(event.locationInWindow, from: nil)))
+        let local = convert(event.locationInWindow, from: nil)
+        state.mouseDown(at: quartzPoint(local))
         highlighted = true
+        updateLoupe(at: local)
         needsDisplay = true
     }
 
     override func mouseDragged(with event: NSEvent) {
         guard !frozen else { return }
-        state.mouseDragged(to: quartzPoint(convert(event.locationInWindow, from: nil)))
+        let local = convert(event.locationInWindow, from: nil)
+        state.mouseDragged(to: quartzPoint(local))
+        updateLoupe(at: local)
         needsDisplay = true
     }
 
@@ -242,24 +294,20 @@ final class SelectionView: NSView {
         NSColor.black.withAlphaComponent(0.35).setFill()
         shade.fill()
         if highlighted {
+            // Draw inward so all four sides remain visible for full-display selections.
+            let fullDisplay = state.target.kind == .display && !frozen
+            let outline = NSBezierPath(rect: selection.insetBy(dx: fullDisplay ? 3 : 1, dy: fullDisplay ? 3 : 1))
+            if fullDisplay {
+                NSColor.black.withAlphaComponent(0.75).setStroke()
+                outline.lineWidth = 6
+                outline.stroke()
+                NSColor.white.setStroke()
+                outline.lineWidth = 4
+                outline.stroke()
+            }
             NSColor.controlAccentColor.setStroke()
-            let outline = NSBezierPath(rect: selection.insetBy(dx: 1, dy: 1))
-            outline.lineWidth = 2
+            outline.lineWidth = fullDisplay ? 3 : 2
             outline.stroke()
         }
-        guard !frozen, highlighted else { return }
-        let kind: String
-        switch state.target.kind {
-        case .display: kind = "全屏"
-        case .window: kind = "窗口"
-        case .region: kind = "区域"
-        }
-        let help = "\(kind) · 单击确认 · 拖动框选区域 · Esc 取消"
-        let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 13, weight: .medium), .foregroundColor: NSColor.white]
-        let size = (help as NSString).size(withAttributes: attributes)
-        let helpRect = CGRect(x: (bounds.width - size.width) / 2 - 16, y: 32, width: size.width + 32, height: 36)
-        NSColor.black.withAlphaComponent(0.75).setFill()
-        NSBezierPath(roundedRect: helpRect, xRadius: 18, yRadius: 18).fill()
-        (help as NSString).draw(at: CGPoint(x: helpRect.minX + 16, y: helpRect.minY + 10), withAttributes: attributes)
     }
 }

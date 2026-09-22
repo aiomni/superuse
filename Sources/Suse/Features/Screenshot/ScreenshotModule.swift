@@ -114,6 +114,7 @@ final class ScreenshotModule: FeatureModule {
             UI.section(UI.stack([
                 UI.label("单击确认，拖动框选", size: 16, weight: .semibold),
                 UI.label("按截图快捷键后，鼠标在窗口上自动框选窗口，在桌面或全屏应用上框选当前屏幕。单击确认；按住拖动始终选择区域。确认后画面保持定格，可进入滚动截图、原位编辑、复制或保存。Esc 退出。", color: .secondaryLabelColor),
+                UI.label("选区时放大镜显示鼠标下的像素、坐标与色值。⇧ 切换 RGB／HEX／HSL，⌘C 复制当前色值。坐标以当前屏幕左上角为原点，按实际像素显示。", size: 12, color: .secondaryLabelColor),
             ])),
             UI.section(UI.stack([
                 UI.label("编辑与滚动", size: 14, weight: .semibold),

@@ -41,6 +41,8 @@ For building the app from source, see the [development guide](DEV.md).
 
 While annotating, use **Command + Z** to undo and **Shift + Command + Z** to redo. **Esc** exits the screenshot even while the canvas or an editing control has focus. In a text-entry or save dialog, the dialog handles its own keyboard shortcuts.
 
+While selecting a screen, window, or region, a floating magnifier shows the pixel under the pointer, its coordinates, and its sRGB color. Coordinates use actual pixels from the current display's top-left corner. Press **Shift** to cycle through RGB, HEX, and HSL; **Command + C** copies the displayed color value without confirming the screenshot. Full-screen selections keep their original brightness and have a contrasting border on all four sides. The magnifier disappears when you confirm the selection.
+
 Choose **Mosaic (打码)**, the checkerboard icon, and drag over an area to pixelate it. The fine, medium, and coarse controls set the block size for the next area. **Redact (遮挡)** covers an area with opaque black. Both tools are included in copied and saved images and support undo and redo.
 
 By default, confirming a selection also copies the original screenshot. Turn off automatic copying in screenshot settings if you prefer to edit first.
