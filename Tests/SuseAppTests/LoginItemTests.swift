@@ -7,13 +7,16 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct LoginItemTests {
-    @Test func openingSettingsDoesNotRegisterAndTheSwitchControlsRegistration() throws {
+    @Test(arguments: [SMAppService.Status.notRegistered, .notFound])
+    func openingSettingsDoesNotRegisterAndTheSwitchControlsRegistration(initialStatus: SMAppService.Status) throws {
         _ = NSApplication.shared
         let service = LoginItemStub()
+        service.status = initialStatus
         let view = LoginItemSettingsView(service: service)
         let toggle = try toggle(in: view)
         #expect(service.registrations == 0)
         #expect(toggle.state == .off)
+        #expect(toggle.isEnabled)
         toggle.performClick(nil)
         #expect(service.registrations == 1)
         #expect(service.status == .enabled)
@@ -26,7 +29,7 @@ struct LoginItemTests {
 
     @Test func failedUpdatesRestoreTheActualSystemState() throws {
         _ = NSApplication.shared
-        for initialStatus in [SMAppService.Status.notRegistered, .enabled] {
+        for initialStatus in [SMAppService.Status.notRegistered, .notFound, .enabled] {
             let service = LoginItemStub()
             service.status = initialStatus
             service.error = AppError("测试签名错误")
@@ -36,6 +39,13 @@ struct LoginItemTests {
             #expect(service.status == initialStatus)
             #expect(toggle.state == (initialStatus == .enabled ? .on : .off))
             #expect(descendants(view).compactMap { $0 as? NSTextField }.contains {
+                !$0.isHidden && $0.stringValue.contains("测试签名错误")
+            })
+            #expect(toggle.isEnabled)
+            service.error = nil
+            toggle.performClick(nil)
+            #expect(service.status == (initialStatus == .enabled ? .notRegistered : .enabled))
+            #expect(!descendants(view).compactMap { $0 as? NSTextField }.contains {
                 !$0.isHidden && $0.stringValue.contains("测试签名错误")
             })
         }
@@ -63,12 +73,18 @@ struct LoginItemTests {
         service.status = .notFound
         view.refresh()
         #expect(toggle.state == .off)
-        #expect(!toggle.isEnabled)
+        #expect(toggle.isEnabled)
+        #expect(service.registrations == 0)
+        toggle.performClick(nil)
+        #expect(service.registrations == 1)
+        #expect(toggle.state == .on)
     }
 
-    @Test func registeringAnItemAwaitingApprovalDoesNotClaimItIsEnabled() throws {
+    @Test(arguments: [SMAppService.Status.notRegistered, .notFound])
+    func registeringAnItemAwaitingApprovalDoesNotClaimItIsEnabled(initialStatus: SMAppService.Status) throws {
         _ = NSApplication.shared
         let service = LoginItemStub()
+        service.status = initialStatus
         service.statusAfterRegistration = .requiresApproval
         let view = LoginItemSettingsView(service: service)
         let toggle = try toggle(in: view)

@@ -55,7 +55,7 @@ final class LoginItemSettingsView: NSView {
     @objc func refresh() {
         let status = service.status
         toggle.state = status == .enabled ? .on : .off
-        toggle.isEnabled = status != .notFound
+        toggle.isEnabled = true
         systemSettings.isHidden = status != .requiresApproval
         errorLabel.isHidden = true
         switch status {
@@ -64,7 +64,7 @@ final class LoginItemSettingsView: NSView {
         case .requiresApproval:
             statusLabel.stringValue = "尚未启用，请在系统登录项中允许 \(AppIdentity.name)。"
         case .notFound:
-            statusLabel.stringValue = "无法读取启动状态，请重新打开应用后重试。"
+            statusLabel.stringValue = "尚未找到此应用的登录项，打开开关可重试。"
         @unknown default:
             toggle.isEnabled = false
             statusLabel.stringValue = "暂时无法读取系统登录项状态。"
@@ -73,11 +73,14 @@ final class LoginItemSettingsView: NSView {
 
     @objc private func changeLoginItem() {
         let enabling = toggle.state == .on
+        let status = service.status
         do {
             if enabling {
+                // mainApp can report notFound before its first login-item record exists.
+                // Let an explicit opt-in register it; surface any registration error below.
                 // A denied item is already registered; only System Settings can approve it.
-                if service.status == .notRegistered { try service.register() }
-            } else if service.status == .enabled || service.status == .requiresApproval {
+                if status == .notRegistered || status == .notFound { try service.register() }
+            } else if status == .enabled || status == .requiresApproval {
                 try service.unregister()
             }
             refresh()
