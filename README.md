@@ -1,111 +1,95 @@
+<p align="center">
+  <img src="Resources/AppIcon-v2/superuse.png" width="112" height="112" alt="superuse toolbox icon">
+</p>
+
 # superuse
 
-一个轻量的 macOS 菜单栏工具箱。使用 **AppKit + 原生 Liquid Glass**，不使用 SwiftUI，无第三方依赖。当前支持截图和剪贴板历史，功能模块彼此独立，共用设置面板和快捷键中枢。
+A small toolbox in your Mac's menu bar. Capture and annotate screenshots, save long pages, and find the text or image you copied earlier.
 
-> macOS 的原生桌面 UI 框架是 AppKit。UIKit 面向 iOS / Mac Catalyst；这里按原生 macOS 应用的目标采用 AppKit。
+**Requires macOS 26 or later.** The app's interface is currently in Simplified Chinese.
 
-## 构建与运行
+## What you can do
 
-应用需要 macOS 26+；构建使用 Xcode 27+ / Swift 6.4 工具链。本次在 macOS 27 / Xcode 27 验证。
+- **Capture a screen, window, or region.** Select a window with a click or drag around exactly what you need.
+- **Annotate before sharing.** Add arrows, shapes, text, freehand marks, and opaque redactions, with undo and redo.
+- **Capture a long page.** Scroll through the content yourself while superuse combines it into one image.
+- **Find your clipboard history.** Search copied text and images, edit text, and copy or paste an earlier entry.
+- **Make it fit your workflow.** Customize shortcuts, pause clipboard recording, and choose whether to launch at login.
 
-仓库内提供 [package-app skill](.agents/skills/package-app/SKILL.md)，可用 `$package-app` 执行打包、固定签名与产物验证。
+## Getting started
 
-```sh
-cp .signing-identity.example .signing-identity.local
-# 将 .signing-identity.local 的内容改为本机代码签名证书的 SHA-1 或名称。
-./scripts/build-app.sh release
-open dist/superuse.app
-```
+Open superuse and use its toolbox or menu bar icon to choose an action. Closing the toolbox keeps the app available in the menu bar; use Quit to exit.
 
-也可以在 Xcode 中打开 `Package.swift` 编辑和调试。涉及权限时，请通过打包后的 `superuse.app` 运行，以便系统识别应用身份。关闭工具箱后应用继续在菜单栏运行；在菜单中选择“退出 superuse”结束应用。
-
-打包使用固定的代码签名证书，优先读取环境变量 `SIGNING_IDENTITY`，其次读取 `.signing-identity.local`。建议填写证书的 SHA-1，避免同名证书混淆；本机配置不提交 Git。可通过 `security find-identity -p codesigning` 查看本机身份。配置缺失、证书不可用或显式指定 `-` 时构建会失败，不会退回 ad-hoc 临时签名。
-
-公开提交中不包含本机签名配置、证书或私钥、环境变量文件及构建日志。`.build/` 和 `dist/` 可能包含本机绝对路径和签名信息，已加入 Git 忽略规则；提交问题或验证记录时，也请移除个人路径、证书指纹和真实截图 / 剪贴板内容。
-
-本机自用可以创建并复用 `Suse Local Development` 自签代码签名证书；有 Apple Development 证书时也可以指定：
-
-```sh
-SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build-app.sh release
-```
-
-首次从临时签名切换到固定证书后，需要退出应用，用 `dist/superuse.app` 替换 `/Applications/superuse.app`，在系统录屏权限列表中移除旧 Suse，再重新添加 `/Applications/superuse.app` 并授权。之后保持签名证书、Bundle ID 和安装路径一致。不要删除并重建同名证书；同名不代表同一身份。保存好对应私钥，证书到期或更换后可能需要重新授权。分发给其他 Mac 前使用 Developer ID Application 签名和公证。
-
-## 原生界面
-
-设置窗口采用 macOS 原生侧栏、浅色分组、细分隔线和右对齐开关。工具箱使用原生工具栏；剪贴板采用紧凑列表和工具栏搜索。Liquid Glass 用于按钮、截图操作栏等控制区域，文字、列表和编辑内容保持清晰背景，跟随系统外观和对比度。
-
-应用已从 Suse 更名为 **superuse**。构建产物和菜单使用新名称；Bundle ID `app.suse.mac`、设置键、历史数据目录以及 `Suse Local Development` 签名证书保持不变，以兼容旧版数据与授权身份。内部 Swift 模块名仍为 `Suse` / `SuseCore`。
-
-在“设置 → 通用”开启 **开机启动**，即可在登录 Mac 后自动驻留菜单栏，自动启动时不弹出工具箱。手动打开应用仍显示工具箱。此选项通过 macOS 原生登录项管理，打开设置不会自动启用；系统要求批准时，点击“打开登录项设置”完成允许，返回应用后状态自动刷新。开关关闭或更新失败时，以系统实际状态为准。建议从固定安装位置的 `superuse.app` 启用。
-
-首次使用若提示“尚未找到此应用的登录项”，仍可打开开关，应用会向系统注册。失败时会显示具体错误，解决后可再次开启，无需反复重启应用。
-
-## 默认快捷键
-
-| 快捷键 | 功能 |
+| Shortcut | Action |
 | --- | --- |
-| ⌃⌥Space | 打开工具箱 |
-| ⇧⌘A | 截图；滚动采集中再次按下完成 |
-| ⌃⌥V | 显示 / 隐藏剪贴板历史 |
+| Control + Option + Space | Open the toolbox |
+| Shift + Command + A | Start a screenshot |
+| Control + Option + V | Show or hide clipboard history |
 
-在“设置 → 快捷键”点击按键组合重新录入。至少包含 Control、Option 或 Command；Delete 停用，Esc 取消。应用内重复和系统注册失败会显示错误；录制时暂停原有快捷键，避免误触发功能。
+Change shortcuts in Settings → Shortcuts. Press Delete while recording a shortcut to disable it, or Esc to cancel. Conflicting shortcuts are reported in settings.
 
-## 截图
+To start superuse when you sign in, enable Launch at Login in Settings → General. It will stay in the menu bar without opening the toolbox.
 
-1. 按 **⇧⌘A**，画面立即定格。鼠标位于桌面或全屏应用上时框选当前屏幕，位于普通应用上时自动框选最前面的窗口。
-2. **单击确认**自动框选的目标；**按住拖动**始终改为区域截图，无需切换模式。一次选择位于一块显示器内，支持多显示器和 Retina 原始像素。
-3. 确认后画面和选区保持原位，显示 Liquid Glass 操作栏。可选择**滚动截图、编辑、重选、保存、复制并完成**；Esc 退出。窗口截图使用定格画面中窗口边界内的可见内容，不含窗口阴影。
-4. **滚动截图**：先框选可滚动的内容区，避开固定页眉和侧栏。进入后保留选区边框，手动缓慢向下滚动，每次保留至少 1/4 重叠，停稳后自动拼接。点击完成或再次按截图快捷键，长图回到原位预览；取消滚动会回到原截图。控制面板可拖动，不会进入成品。
-5. **原位编辑**：画笔、箭头、矩形、椭圆、文字、不透明黑色遮挡，支持颜色、粗细和撤销 / 重做。长图可在选区内滚动查看。已有标注时，清除标注后才能进入滚动截图。
+For building the app from source, see the [development guide](DEV.md).
 
-默认确认后自动复制原图，并继续保留操作栏。**Enter** 复制当前结果并结束截图，**⇧⌘C** 复制且保留界面，**⌘S** 保存 PNG。导出保留原始像素尺寸。原区域截图的自定义快捷键和停用状态会保留；旧的全屏、窗口、滚动独立快捷键不再注册。
+## Screenshots
 
-滚动拼接在独立 actor 中运行，只保存新增图像条带。最多 30,000 px 高、48 MP；到达限制后可导出已接受的部分。重复图案、动画、滚动过快、反向滚动或重叠不足时可能无法匹配，会保留已拼接内容并提示回退重试。它不控制目标应用自动滚动。
+1. Press **Shift + Command + A** to freeze the screen. Move over a window to select it, or over the desktop to select the screen.
+2. **Click** to confirm, or **drag** to select an area.
+3. Use the toolbar to annotate, start a scrolling capture, change the selection, save, or copy.
+4. Press **Return** to copy and finish, **Shift + Command + C** to copy and keep editing, **Command + S** to save, or **Esc** to cancel.
 
-首次截图会请求系统屏幕录制权限。若拒绝，在“设置 → 通用”打开对应系统权限页后启用 superuse；必要时退出并重新运行。
+By default, confirming a selection also copies the original screenshot. Turn off automatic copying in screenshot settings if you prefer to edit first.
 
-## 剪贴板
+Screenshots work across multiple-monitor setups, with each selection staying on one display. Window captures include the visible part of the window, without its shadow.
 
-记录纯文本和 PNG / TIFF 图片。打开面板后直接搜索，支持：
+### Scrolling screenshots
 
-| 操作 | 按键 |
+Select the content area and choose the scrolling action before adding annotations. Scroll downward slowly, keeping some of the previous content visible each time. Click Finish or press **Shift + Command + A** again to return to the preview.
+
+Keep fixed headers and sidebars outside the selection where possible. Animation, repeated patterns, fast scrolling, and scrolling backward can interrupt matching. If that happens, superuse keeps the portion already captured so you can retry or save it.
+
+## Clipboard history
+
+Open clipboard history and start typing to search. Use the keyboard or double-click an entry to reuse it.
+
+| Key or action | Result |
 | --- | --- |
-| 选择历史 | ↑ / ↓ |
-| 复制选中内容并收起 | Return，或双击 |
-| 粘贴到唤起前的应用 | ⌘Return |
-| 编辑选中文本 | ⌘E |
-| 删除选中记录 | ⌘Delete |
-| 聚焦搜索 / 关闭面板 | ⌘F / Esc |
+| Up / Down | Select an entry |
+| Return or double-click | Copy the entry and close the panel |
+| Command + Return | Paste into the app you were using before opening history |
+| Command + E | Edit a text entry |
+| Command + Delete | Delete an entry |
+| Command + F | Focus search |
+| Esc | Close the panel |
 
-直接粘贴需要“辅助功能”权限和仍然可恢复的目标应用焦点。没有权限时内容仍会复制，可手动 ⌘V。图片可重新复制和粘贴；文字可编辑。富文本格式及多文件附件暂不保留。
+superuse keeps the latest **100 entries** by default. Choose 50, 100, or 200 in settings. Copying the same content again moves it to the top.
 
-macOS 还会单独控制剪贴板读取权限。首次自动记录可能显示系统询问；在系统设置的隐私与安全性中允许 superuse 读取其他应用的剪贴板，设为“始终允许”可避免每次复制时询问。应用会显示读取被阻止的状态，不会绕过系统权限。
+History supports text and images. Rich-text formatting and file attachments are not preserved. You can pause recording, exclude specific apps, or clear your history at any time.
 
-默认仅使用内存，最多 100 条，可设为 50 / 100 / 200 条。单条最多 8 MB，总计最多 32 MB；去重后将新记录放到顶部，超限移除最旧记录。设置中支持暂停采集、排除应用 Bundle ID、清空历史及可选磁盘持久化。
+## Permissions and privacy
 
-开启持久化后文件位于 `~/Library/Application Support/Suse/clipboard-history.json`，文件权限为 `0600`；关闭持久化立即删除该文件，内存历史继续可用。没有应用层加密。默认忽略来源应用标记为 concealed / transient / autogenerated 的内容；未标记的秘密信息无法自动识别，可暂停采集或排除对应应用。
+superuse works locally on your Mac and does not require an account.
 
-## 验证与结构
+| Permission | Why it is needed |
+| --- | --- |
+| Screen recording | To capture your screen when you start a screenshot |
+| Clipboard access | To record the text and images you copy |
+| Accessibility | To paste directly into another app |
+| Login items | To open automatically at login, if you enable that option |
 
-```sh
-swift test
-```
+Settings includes shortcuts to the relevant system settings. Without Accessibility permission, you can still copy an entry and paste it yourself. If direct paste cannot return to the target app, the entry remains copied for manual pasting.
 
-自动测试覆盖：历史去重 / 容量 / 编辑 / 序列化、真实的隔离 NSPasteboard 读写、敏感标记、持久化删除、标注导出方向和撤销、自动窗口 / 全屏命中、点击与拖动区分、确认后锁定选区、原位编辑和操作栏边界、多屏坐标换算、逐像素滚动拼接、静止和运动帧、歧义与容量上限。同时检查亮色、暗色和高对比度下的原生窗口布局、紧凑列表和截图操作栏边界。测试使用专用剪贴板和临时目录，不读写你的系统剪贴板历史。
+Clipboard history is kept only for the current session by default. Enable persistence in settings to keep it after restarting the app. Turning persistence off deletes the saved copy while keeping the current session's history available. Saved history is not encrypted by superuse.
 
-```text
-Sources/
-  SuseCore/                  数据模型、坐标转换、滚动拼接
-  Suse/
-    App/                     组合根、菜单栏、工具箱、统一设置
-    Shared/                  功能接口、快捷键中枢、设置、原生 UI 工具
-    Features/
-      Clipboard/             采集、存储、历史面板、跨应用粘贴
-      Screenshot/            屏幕捕获、选区、滚动会话、标注和导出
-Tests/
-  SuseCoreTests/             核心逻辑和像素级测试
-  SuseAppTests/              AppKit 集成测试
-```
+> [!NOTE]
+> superuse skips content marked sensitive by the source app by default, but it cannot recognize every password or secret. Pause recording or exclude an app when working with sensitive information.
 
-添加功能时实现 `FeatureModule`，在组合根注册。功能只提供命令、生命周期和设置页，不持有其他功能的实现。实现顺序和边界说明见 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)，实机验收步骤见 [docs/VERIFICATION.md](docs/VERIFICATION.md)。
+## Help
+
+- **Screenshots are unavailable:** allow screen recording in System Settings, then restart superuse if prompted.
+- **Clipboard history is empty:** check that recording is enabled and macOS allows clipboard access.
+- **Direct paste does not work:** allow Accessibility access, or copy the entry and paste manually.
+- **Launch at login needs approval:** use the settings shortcut to review login items in System Settings.
+
+For a bug or feature request, [open an issue](https://github.com/aiomni/superuse/issues). Remove private text, images, and personal details from anything you share.
