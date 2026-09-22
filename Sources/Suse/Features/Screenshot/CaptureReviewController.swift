@@ -38,10 +38,8 @@ final class CaptureReviewController: NSViewController {
     private let toolPicker = NSSegmentedControl()
     private let colorWell = NSColorWell()
     private var toolbar: NSView?
-    private var palette: NSView?
     private var toolbarAnchor = CGPoint.zero
-    private var paletteExpandsDownward = false
-    private var editButton: ActionButton?
+    private var toolbarBelowSelection = false
     private var scrollButton: ActionButton?
     var onAction: ((CaptureReviewAction) -> Void)?
 
@@ -52,7 +50,6 @@ final class CaptureReviewController: NSViewController {
         self.allowsScrolling = allowsScrolling
         self.pasteboard = pasteboard
         canvas = AnnotationCanvas(image: image, displayWidth: selectionRect.width)
-        canvas.editingEnabled = false
         super.init(nibName: nil, bundle: nil)
         canvas.requestText = { [weak self] in self?.requestText(at: $0) }
         canvas.onChange = { [weak self] in self?.updateStatus() }
@@ -84,10 +81,6 @@ final class CaptureReviewController: NSViewController {
     }
 
     private func buildToolbar() {
-        let edit = ActionButton("标注", symbol: "pencil.tip", style: .accessoryBar) { [weak self] in self?.toggleEditing() }
-        edit.setButtonType(.pushOnPushOff)
-        edit.toolTip = "显示或收起标注工具"
-        editButton = edit
         let scrolling = ActionButton("滚动截图", symbol: "scroll", style: .accessoryBar) { [weak self] in self?.onAction?(.scroll) }
         scrolling.isHidden = !allowsScrolling
         scrollButton = scrolling
@@ -104,12 +97,11 @@ final class CaptureReviewController: NSViewController {
         let cancel = ActionButton(icon: "取消", symbol: "xmark", symbolColor: .systemRed, style: .accessoryBar) { [weak self] in self?.onAction?(.done) }
         cancel.toolTip = "取消截图（Esc）"
         let actions = UI.stack([
-            UI.stack([edit, scrolling], axis: .horizontal, spacing: 8),
+            scrolling,
             UI.stack([reselect, save], axis: .horizontal, spacing: 8),
             UI.stack([cancel, copy], axis: .horizontal, spacing: 8),
         ], axis: .horizontal, spacing: 16)
         let palette = UI.glassBar(makePalette(), inset: 8)
-        self.palette = palette
         let mainBar = UI.glassBar(actions, inset: 8)
         // A dark tint keeps bright desktop content from washing out control labels.
         palette.tintColor = .windowBackgroundColor
@@ -121,7 +113,6 @@ final class CaptureReviewController: NSViewController {
         toolbar = container
         updateStatus()
         anchorToolbar(content: content, palette: palette)
-        palette.isHidden = true
         positionToolbar()
     }
 
@@ -207,7 +198,7 @@ final class CaptureReviewController: NSViewController {
 
     private func anchorToolbar(content: NSStackView, palette: NSView) {
         guard let toolbar else { return }
-        // Choose a side once using the expanded size, before hiding the palette.
+        // Place both control bars together and retain their anchor throughout the review.
         // The anchor is the main bar's right edge and its top or bottom edge.
         toolbar.layoutSubtreeIfNeeded()
         let size = toolbar.fittingSize
@@ -215,7 +206,7 @@ final class CaptureReviewController: NSViewController {
         let x = min(max(margin, selectionRect.maxX - size.width), max(margin, displaySize.width - size.width - margin))
         toolbarAnchor.x = x + size.width
         if selectionRect.maxY + margin + size.height <= displaySize.height - margin {
-            paletteExpandsDownward = true
+            toolbarBelowSelection = true
             toolbarAnchor.y = selectionRect.maxY + margin
             content.removeArrangedSubview(palette)
             content.addArrangedSubview(palette)
@@ -231,19 +222,9 @@ final class CaptureReviewController: NSViewController {
         toolbar.layoutSubtreeIfNeeded()
         let size = toolbar.fittingSize
         let x = toolbarAnchor.x - size.width
-        let y = paletteExpandsDownward ? toolbarAnchor.y : toolbarAnchor.y - size.height
+        let y = toolbarBelowSelection ? toolbarAnchor.y : toolbarAnchor.y - size.height
         toolbar.frame = CGRect(origin: CGPoint(x: x, y: y), size: size)
         positionStatusBadge()
-    }
-
-    private func toggleEditing() {
-        canvas.editingEnabled.toggle()
-        palette?.isHidden = !canvas.editingEnabled
-        editButton?.state = canvas.editingEnabled ? .on : .off
-        canvas.window?.invalidateCursorRects(for: canvas)
-        view.window?.makeFirstResponder(canvas.editingEnabled ? canvas : view)
-        updateStatus()
-        positionToolbar()
     }
 
     @objc private func toolChanged() {
@@ -257,8 +238,8 @@ final class CaptureReviewController: NSViewController {
         let annotations = canvas.annotationCount > 0 ? " · \(canvas.annotationCount) 处标注" : ""
         setStatus("\(canvas.image.width) × \(canvas.image.height) px\(annotations)")
         status.toolTip = "↩ 完成 · ⌘S 保存 · ⇧⌘C 复制 · Esc 退出"
-        scrollButton?.isEnabled = !canvas.editingEnabled && canvas.annotationCount == 0
-        scrollButton?.toolTip = canvas.annotationCount > 0 ? "清除标注后可进入滚动截图" : "进入后在选区内缓慢向下滚动"
+        scrollButton?.isEnabled = canvas.annotationCount == 0
+        scrollButton?.toolTip = canvas.annotationCount > 0 ? "撤销或清除全部标注后可进入滚动截图" : "进入后在选区内缓慢向下滚动"
     }
 
     private func setStatus(_ message: String) {

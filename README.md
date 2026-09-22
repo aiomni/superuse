@@ -36,7 +36,7 @@ For building the app from source, see the [development guide](DEV.md).
 
 1. Press **Shift + Command + A** to freeze the screen. Move over a window to select it, or over the desktop to select the screen.
 2. **Click** to confirm, or **drag** to select an area.
-3. Use the toolbar to annotate, start a scrolling capture, change the selection, save, or copy.
+3. Annotation tools are ready immediately. Draw on the image, start a scrolling capture, change the selection, save, or copy.
 4. Press **Return** to copy and finish, **Shift + Command + C** to copy and keep editing, **Command + S** to save, or **Esc** to cancel.
 
 While annotating, use **Command + Z** to undo and **Shift + Command + Z** to redo. **Esc** exits the screenshot even while the canvas or an editing control has focus. In a text-entry or save dialog, the dialog handles its own keyboard shortcuts.
@@ -47,7 +47,7 @@ Screenshots work across multiple-monitor setups, with each selection staying on 
 
 ### Scrolling screenshots
 
-Select the content area and choose the scrolling action before adding annotations. Scroll downward slowly, keeping some of the previous content visible each time. Click Finish or press **Shift + Command + A** again to return to the preview.
+Select the content area and choose the scrolling action before adding annotations. Adding an annotation disables scrolling capture; undo or clear all annotations to enable it again. Choosing a tool, color, or line width does not disable it. Scroll downward slowly, keeping some of the previous content visible each time. Click Finish or press **Shift + Command + A** again to return to the preview.
 
 Keep fixed headers and sidebars outside the selection where possible. Animation, repeated patterns, fast scrolling, and scrolling backward can interrupt matching. If that happens, superuse keeps the portion already captured so you can retry or save it.
 

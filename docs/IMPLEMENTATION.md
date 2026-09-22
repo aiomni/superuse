@@ -32,8 +32,8 @@ superuse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**
 - 设置使用 `NSSplitViewController` 的原生 sidebar item 和 `NSTableView.sourceList`。详情页可滚动，`NSBox` 分组配合系统语义颜色，开关使用 `NSSwitch`。
 - 工具箱和剪贴板使用 `NSToolbar`；剪贴板搜索使用 `NSSearchToolbarItem`，唤起面板后直接聚焦搜索。
 - `UI.section` 负责内容分组；`UI.glassBar` 只承载浮动操作；相邻玻璃控件置于同一个 `NSGlassEffectContainerView`。列表、图片画布和文本编辑器不叠加玻璃背景。
-- 截图操作栏首次布局按标注工具展开后的尺寸选择位置并固定锚点；选区下方有空间时向下展开，否则向上展开。编辑按钮预留两种标题的宽度，图标与文字通过原生 `imageHugsTitle` 保持紧凑组合，状态提示保持单行，避免切换编辑或更新提示时移动操作按钮。
-- 按钮使用 AppKit 原生 bezel style；工具条按钮通过 `showsBorderOnlyWhileMouseInside` 显示原生悬停反馈。完成 / 取消的 SF Symbol 分别使用系统绿色 / 红色，文字保留系统颜色；图标按钮提供 tooltip 和无障碍名称。macOS 27 使用 `effectIsInteractive`，macOS 26 继续使用原生常规玻璃。
+- 确认选区后直接显示操作栏和标注工具栏，不再切换编辑模式。首次布局按两条工具栏的完整尺寸选择位置并固定锚点，优先放在选区下方，其次上方。添加标注后禁用滚动截图，撤销或清除全部标注后恢复；仅切换工具、颜色或线宽不影响滚动入口。状态提示独立显示在选区边缘，避免编辑和更新提示时移动操作按钮。
+- 按钮使用 AppKit 原生 bezel style；截图工具条使用常驻底色的 `accessoryBarAction` 按钮和深色玻璃。完成 / 取消的 SF Symbol 分别使用系统绿色 / 红色，文字保留系统颜色；图标按钮提供 tooltip 和无障碍名称。macOS 27 使用 `effectIsInteractive`，macOS 26 继续使用原生常规玻璃。
 - 界面中的应用名由 `AppIdentity` 读取 bundle display name。更名为 superuse 时保留旧 Bundle ID、偏好键与历史路径，不触发数据迁移；打包继续使用原有固定签名证书。
 
 遵循 Liquid Glass 的导航 / 内容分层，以 AppKit 实现，不引入 SwiftUI。API 以当前 Apple 文档和 SDK 为准：

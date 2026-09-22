@@ -133,22 +133,15 @@ struct NativeIntegrationTests {
             let scroll = try #require(view.subviews.first { $0 is NSScrollView } as? NSScrollView)
             let canvas = try #require(scroll.documentView as? AnnotationCanvas)
             #expect(scroll.frame == rect)
-            #expect(!canvas.editingEnabled)
             let glass = try #require(view.subviews.first { $0 is NSGlassEffectContainerView })
             #expect(view.bounds.contains(glass.frame))
             let buttons = descendants(of: view).compactMap { $0 as? NSButton }
-            let edit = try #require(buttons.first { $0.title == "标注" })
-            edit.performClick(nil)
-            view.layoutSubtreeIfNeeded()
-            #expect(canvas.editingEnabled)
-            #expect(scroll.frame == rect)
-            #expect(view.bounds.contains(glass.frame))
+            #expect(!buttons.contains { $0.title == "标注" || $0.title == "编辑" })
+            let bars = descendants(of: glass).compactMap { $0 as? NSGlassEffectView }
+            #expect(bars.count == 2)
+            #expect(bars.allSatisfy { !$0.isHiddenOrHasHiddenAncestor })
             #expect(pixels(try canvas.renderedImage()) == pixels(colorFixture()))
             let scrolling = try #require(buttons.first { $0.title == "滚动截图" })
-            #expect(!scrolling.isEnabled)
-            edit.performClick(nil)
-            #expect(!canvas.editingEnabled)
-            #expect(edit.state == .off)
             #expect(scrolling.isEnabled)
         }
     }
@@ -163,7 +156,7 @@ struct NativeIntegrationTests {
         CGRect(x: 0, y: 760, width: 30, height: 20),
         CGRect(x: 1160, y: 760, width: 30, height: 20),
     ], [true, false])
-    func reviewKeepsActionBarAnchoredWhenEditing(selection: CGRect, allowsScrolling: Bool) throws {
+    func reviewKeepsControlsAnchoredDuringAnnotation(selection: CGRect, allowsScrolling: Bool) throws {
         _ = NSApplication.shared
         let size = CGSize(width: 1200, height: 800)
         let pasteboard = NSPasteboard.withUniqueName()
@@ -176,9 +169,9 @@ struct NativeIntegrationTests {
         let view = controller.view
         view.layoutSubtreeIfNeeded()
         let buttons = descendants(of: view).compactMap { $0 as? NSButton }
-        let edit = try #require(buttons.first { $0.title == "标注" })
+        let complete = try #require(buttons.first { $0.title == "完成" })
         let bars = descendants(of: view).compactMap { $0 as? NSGlassEffectView }
-        let mainBar = try #require(bars.first { edit.isDescendant(of: $0) })
+        let mainBar = try #require(bars.first { complete.isDescendant(of: $0) })
         let palette = try #require(bars.first { $0 !== mainBar })
         let actionButtons = buttons.filter { $0.isDescendant(of: mainBar) && !$0.isHidden }
         let status = try #require(descendants(of: view).compactMap { $0 as? NSTextField }.first { $0.accessibilityIdentifier() == "capture-status" })
@@ -189,32 +182,34 @@ struct NativeIntegrationTests {
         #expect(view.bounds.contains(statusBadge.frame))
         #expect(!statusBadge.frame.intersects(barFrame))
 
-        for _ in 0..<2 {
-            edit.performClick(nil)
+        let canvas = try #require(descendants(of: view).first { $0 is AnnotationCanvas } as? AnnotationCanvas)
+        let paletteFrame = view.convert(palette.bounds, from: palette)
+        func expectAnchored() {
             view.layoutSubtreeIfNeeded()
-            #expect(!palette.isHidden)
-            let paletteFrame = view.convert(palette.bounds, from: palette)
+            #expect(!palette.isHiddenOrHasHiddenAncestor)
             #expect(view.bounds.contains(paletteFrame))
             #expect(!paletteFrame.intersects(barFrame))
             #expect(view.bounds.contains(statusBadge.frame))
             #expect(!statusBadge.frame.intersects(barFrame))
             #expect(!statusBadge.frame.intersects(paletteFrame))
             #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
-            #expect(actionButtons.map { view.convert($0.bounds, from: $0) } == buttonFrames)
-            controller.copyImage(completing: false)
-            view.layoutSubtreeIfNeeded()
-            #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
-            // A long save result must truncate instead of widening the controls.
-            status.stringValue = "已保存到 \(String(repeating: "截图文件", count: 30)).png"
-            view.layoutSubtreeIfNeeded()
-            #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
-
-            edit.performClick(nil)
-            view.layoutSubtreeIfNeeded()
-            #expect(palette.isHidden)
-            #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
+            #expect(view.convert(palette.bounds, from: palette) == paletteFrame)
             #expect(actionButtons.map { view.convert($0.bounds, from: $0) } == buttonFrames)
         }
+        expectAnchored()
+        canvas.addText("A", at: CGPoint(x: 12, y: 4))
+        expectAnchored()
+        canvas.undoManager?.undo()
+        expectAnchored()
+        canvas.undoManager?.redo()
+        expectAnchored()
+        canvas.clear()
+        expectAnchored()
+        controller.copyImage(completing: false)
+        expectAnchored()
+        // A long save result must truncate instead of widening the controls.
+        status.stringValue = "已保存到 \(String(repeating: "截图文件", count: 30)).png"
+        expectAnchored()
     }
 
     @Test(arguments: [false, true])
@@ -225,12 +220,69 @@ struct NativeIntegrationTests {
         fixture.canvas.addText("A", at: CGPoint(x: 12, y: 4))
         var cancelled = 0
         fixture.window.onCancel = { cancelled += 1 }
-        #expect(fixture.window.makeFirstResponder(focusOnControl ? fixture.edit : fixture.canvas))
+        #expect(fixture.window.makeFirstResponder(focusOnControl ? fixture.control : fixture.canvas))
 
         fixture.window.sendEvent(try keyEvent(in: fixture.window, code: 53, characters: "\u{1b}"))
 
         #expect(cancelled == 1)
         #expect(fixture.pasteboard.string(forType: .string) == "keep clipboard")
+    }
+
+    @Test func reviewAllowsScrollingOnlyWhileUnmodified() throws {
+        let fixture = try keyboardReview()
+        defer { fixture.pasteboard.releaseGlobally() }
+        let views = descendants(of: fixture.controller.view)
+        let scrolling = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "滚动截图" })
+        var scrollRequests = 0
+        fixture.controller.onAction = { if case .scroll = $0 { scrollRequests += 1 } }
+        #expect(scrolling.isEnabled)
+        scrolling.performClick(nil)
+        #expect(scrollRequests == 1)
+
+        // Choosing a tool, color, or line width does not change the image.
+        let tools = try #require(views.compactMap { $0 as? NSSegmentedControl }.first { $0.segmentCount == 6 })
+        tools.selectedSegment = AnnotationTool.rectangle.rawValue
+        tools.sendAction(tools.action, to: tools.target)
+        let widths = try #require(views.compactMap { $0 as? NSSegmentedControl }.first { $0.segmentCount == 3 })
+        widths.selectedSegment = 2
+        widths.sendAction(widths.action, to: widths.target)
+        let color = try #require(views.first { $0 is NSColorWell } as? NSColorWell)
+        color.color = .systemBlue
+        color.sendAction(color.action, to: color.target)
+        #expect(scrolling.isEnabled)
+        #expect(pixels(try fixture.canvas.renderedImage()) == pixels(colorFixture()))
+
+        // Drawing works immediately, without first entering an editing mode.
+        func mouseEvent(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: fixture.canvas.convert(point, to: nil),
+                                           modifierFlags: [], timestamp: 0, windowNumber: fixture.window.windowNumber,
+                                           context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        fixture.canvas.mouseDown(with: try mouseEvent(.leftMouseDown, at: CGPoint(x: 20, y: 20)))
+        fixture.canvas.mouseDragged(with: try mouseEvent(.leftMouseDragged, at: CGPoint(x: 100, y: 80)))
+        fixture.canvas.mouseUp(with: try mouseEvent(.leftMouseUp, at: CGPoint(x: 100, y: 80)))
+        #expect(fixture.canvas.annotationCount == 1)
+        #expect(!scrolling.isEnabled)
+        scrolling.performClick(nil)
+        #expect(scrollRequests == 1)
+
+        fixture.canvas.undoManager?.undo()
+        #expect(scrolling.isEnabled)
+        #expect(pixels(try fixture.canvas.renderedImage()) == pixels(colorFixture()))
+        fixture.canvas.undoManager?.redo()
+        #expect(!scrolling.isEnabled)
+        fixture.canvas.addText("A", at: CGPoint(x: 12, y: 4))
+        fixture.canvas.undoManager?.undo()
+        #expect(fixture.canvas.annotationCount == 1)
+        #expect(!scrolling.isEnabled)
+        fixture.canvas.clear()
+        #expect(scrolling.isEnabled)
+        fixture.canvas.undoManager?.undo()
+        #expect(!scrolling.isEnabled)
+        fixture.canvas.clear()
+        #expect(scrolling.isEnabled)
+        scrolling.performClick(nil)
+        #expect(scrollRequests == 2)
     }
 
     @Test(arguments: [false, true])
@@ -241,7 +293,7 @@ struct NativeIntegrationTests {
         let redo = try keyEvent(in: fixture.window, code: 6, characters: "Z", modifiers: [.command, .shift])
         fixture.canvas.addText("A", at: CGPoint(x: 12, y: 4))
         let annotated = pixels(try fixture.canvas.renderedImage())
-        #expect(fixture.window.makeFirstResponder(focusOnControl ? fixture.edit : fixture.canvas))
+        #expect(fixture.window.makeFirstResponder(focusOnControl ? fixture.control : fixture.canvas))
 
         fixture.window.sendEvent(undo)
         #expect(fixture.canvas.annotationCount == 0)
@@ -259,9 +311,6 @@ struct NativeIntegrationTests {
         #expect(pixels(try fixture.canvas.renderedImage()) == newEdit)
         let modifiedUndo = try keyEvent(in: fixture.window, code: 6, characters: "z", modifiers: [.command, .option])
         #expect(!fixture.window.performKeyEquivalent(with: modifiedUndo))
-        #expect(pixels(try fixture.canvas.renderedImage()) == newEdit)
-        fixture.edit.performClick(nil)
-        #expect(!fixture.window.performKeyEquivalent(with: undo))
         #expect(pixels(try fixture.canvas.renderedImage()) == newEdit)
     }
 
@@ -294,7 +343,7 @@ struct NativeIntegrationTests {
     }
 
     private func keyboardReview() throws -> (controller: CaptureReviewController, window: SelectionWindow,
-                                              canvas: AnnotationCanvas, edit: NSButton, pasteboard: NSPasteboard) {
+                                              canvas: AnnotationCanvas, control: NSButton, pasteboard: NSPasteboard) {
         _ = NSApplication.shared
         let size = CGSize(width: 1200, height: 800)
         let pasteboard = NSPasteboard.withUniqueName()
@@ -306,9 +355,8 @@ struct NativeIntegrationTests {
         window.handleReviewKey = { [weak controller] in controller?.view.performKeyEquivalent(with: $0) ?? false }
         let views = descendants(of: controller.view)
         let canvas = try #require(views.first { $0 is AnnotationCanvas } as? AnnotationCanvas)
-        let edit = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "标注" })
-        edit.performClick(nil)
-        return (controller, window, canvas, edit, pasteboard)
+        let control = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "完成" })
+        return (controller, window, canvas, control, pasteboard)
     }
 
     private func keyEvent(in window: NSWindow, code: UInt16, characters: String,

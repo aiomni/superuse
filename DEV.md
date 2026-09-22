@@ -111,9 +111,9 @@ Features implement `@MainActor FeatureModule`, expose `AppCommand` values and se
 
 AppKit state lives on the main actor. `ScrollStitcher` handles image processing in an actor, and `ClipboardDisk` serializes persistence using revision numbers. Shutdown stops feature activity and awaits pending clipboard writes.
 
-Screenshot selection uses a frozen desktop image. `CaptureSelectionState` handles hit testing and click-versus-drag behavior; `SelectionController` owns the overlays; `CaptureReviewController` handles in-place editing and export. The action bar keeps its anchor when editing tools or status text change.
+Screenshot selection uses a frozen desktop image. `CaptureSelectionState` handles hit testing and click-versus-drag behavior; `SelectionController` owns the overlays; `CaptureReviewController` handles in-place editing and export. Both control bars keep their anchor when annotations or status text change.
 
-Screenshot controls use native accessory-bar buttons with persistent bezels on a dark Liquid Glass surface, including the matching high-contrast appearance. Main actions stay in one row; dimensions and copy/save feedback appear in a separate badge near the selection. The annotation toggle keeps its label and uses the native selected state.
+Screenshot controls use native accessory-bar buttons with persistent bezels on a dark Liquid Glass surface, including the matching high-contrast appearance. Main actions stay in one row; dimensions and copy/save feedback appear in a separate badge near the selection. Annotation tools are always visible and the canvas accepts drawing immediately. Scrolling capture is disabled only while annotations remain; undoing or clearing all annotations restores it.
 
 `SelectionWindow` routes screenshot shortcuts before the focused canvas or control consumes key events. Esc cancels the session, and the review's native button key equivalents provide undo and redo using the canvas's existing undo manager. Attached sheets and text responders retain their own shortcut handling.
 

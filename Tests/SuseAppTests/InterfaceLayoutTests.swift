@@ -105,10 +105,10 @@ struct InterfaceLayoutTests {
             #expect(controller.view.bounds.contains(container.frame))
             #expect(!selection.intersects(container.frame))
             try render(window, named: "capture-\(name)")
-            let edit = try #require(descendants(container).compactMap { $0 as? NSButton }.first { $0.title == "标注" })
+            let complete = try #require(descendants(container).compactMap { $0 as? NSButton }.first { $0.title == "完成" })
             controller.view.layoutSubtreeIfNeeded()
             let mainBar = try #require(descendants(container).compactMap { $0 as? NSGlassEffectView }
-                .first { edit.isDescendant(of: $0) })
+                .first { complete.isDescendant(of: $0) })
             let buttons = descendants(mainBar).compactMap { $0 as? NSButton }
             // Main actions remain a single compact row with equal click targets.
             let frames = buttons.map { mainBar.convert($0.bounds, from: $0) }
@@ -124,16 +124,12 @@ struct InterfaceLayoutTests {
             // Recent AppKit versions resolve contrast names to the base appearance
             // and apply the system accessibility setting during rendering.
             #expect(container.effectiveAppearance.name == NSAppearance(named: expectedAppearance)?.name)
-            let editFrame = controller.view.convert(edit.bounds, from: edit)
-            try expectCompactImageTitleSpacing(edit)
-            edit.performClick(nil)
-            #expect(edit.state == .on)
-            controller.view.layoutSubtreeIfNeeded()
-            #expect(controller.view.bounds.contains(container.frame))
-            #expect(!selection.intersects(container.frame))
-            #expect(controller.view.convert(edit.bounds, from: edit) == editFrame)
-            try expectCompactImageTitleSpacing(edit)
-            try render(window, named: "capture-edit-\(name)")
+            try expectCompactImageTitleSpacing(complete)
+            let palette = try #require(descendants(container).compactMap { $0 as? NSGlassEffectView }
+                .first { $0 !== mainBar })
+            #expect(!palette.isHiddenOrHasHiddenAncestor)
+            #expect(!controller.view.convert(palette.bounds, from: palette)
+                .intersects(controller.view.convert(mainBar.bounds, from: mainBar)))
         }
     }
 

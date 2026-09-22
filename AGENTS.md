@@ -42,7 +42,7 @@ For behavior changes, add or update meaningful regression coverage and run affec
 - Reuse `UI`, `ActionButton`, native toolbars, semantic colors, system fonts, tooltips, and accessibility labels. Current app strings are in Simplified Chinese; keep new user-facing copy consistent.
 - Use Liquid Glass for floating controls. Keep lists, text editors, settings content, and image canvases readable without glass backgrounds; group adjacent glass controls with `NSGlassEffectContainerView`.
 - Guard macOS 27-only APIs with availability checks and preserve macOS 26 behavior. Offscreen layout images do not fully validate glass rendering or actual hover behavior.
-- Preserve the screenshot toolbar's anchor when editing controls expand or status text changes.
+- Keep screenshot annotation tools visible by default and preserve both toolbars' anchors when annotations or status text change.
 - The packaged icon comes from `scripts/make-icon-v2.swift`; the menu bar template image lives in `Sources/Suse/Shared/AppIcon.swift`. The older `scripts/make-icon.swift` is not used by the packaging script.
 
 ## Compatibility and behavior to preserve
