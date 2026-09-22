@@ -26,7 +26,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
 
     private func configureFeatures() {
-        features = []
+        features = [ClipboardModule(settings: settings)]
     }
 
     func applicationWillTerminate(_ notification: Notification) {
