@@ -8,6 +8,8 @@
 
 应用需要 macOS 26+；构建使用 Xcode 27+ / Swift 6.4 工具链。本次在 macOS 27 / Xcode 27 验证。
 
+仓库内提供 [package-app skill](.agents/skills/package-app/SKILL.md)，可用 `$package-app` 执行打包、固定签名与产物验证。
+
 ```sh
 cp .signing-identity.example .signing-identity.local
 # 将 .signing-identity.local 的内容改为本机代码签名证书的 SHA-1 或名称。
