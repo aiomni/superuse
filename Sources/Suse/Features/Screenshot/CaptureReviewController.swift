@@ -175,8 +175,8 @@ final class CaptureReviewController: NSViewController {
         colorWell.colorWellStyle = .minimal
         colorWell.target = self
         colorWell.action = #selector(colorChanged)
-        colorWell.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        colorWell.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        colorWell.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        colorWell.heightAnchor.constraint(equalTo: colorWell.widthAnchor).isActive = true
         let widths = NSSegmentedControl(labels: ["细", "中", "粗"], trackingMode: .selectOne,
                                         target: self, action: #selector(widthChanged(_:)))
         widths.segmentStyle = .roundRect
