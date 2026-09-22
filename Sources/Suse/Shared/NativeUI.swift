@@ -164,7 +164,7 @@ private final class ActionSwitch: NSSwitch {
 
 @MainActor
 final class ActionButton: NSButton {
-    enum Style { case standard, glass, toolbar }
+    enum Style { case standard, glass, toolbar, accessoryBar }
     private var actionHandler: () -> Void
 
     init(_ title: String, symbol: String? = nil, symbolColor: NSColor? = nil,
@@ -182,24 +182,35 @@ final class ActionButton: NSButton {
             bezelStyle = .toolbar
             isBordered = true
             showsBorderOnlyWhileMouseInside = true
+        case .accessoryBar:
+            bezelStyle = .accessoryBarAction
+            isBordered = true
+            showsBorderOnlyWhileMouseInside = false
+            font = .systemFont(ofSize: 13, weight: .medium)
+            heightAnchor.constraint(equalToConstant: 32).isActive = true
         }
         if let symbol {
             image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)
             imagePosition = .imageLeading
             imageHugsTitle = true
-            if let symbolColor { symbolConfiguration = .init(paletteColors: [symbolColor]) }
+            if style == .accessoryBar { symbolConfiguration = .init(pointSize: 15, weight: .medium) }
+            if let symbolColor {
+                let palette = NSImage.SymbolConfiguration(paletteColors: [symbolColor])
+                symbolConfiguration = symbolConfiguration?.applying(palette) ?? palette
+            }
         }
         target = self
         self.action = #selector(invoke)
         setAccessibilityLabel(title)
     }
 
-    convenience init(icon title: String, symbol: String, symbolColor: NSColor? = nil, action: @escaping () -> Void) {
-        self.init(title, symbol: symbol, symbolColor: symbolColor, style: .toolbar, action: action)
+    convenience init(icon title: String, symbol: String, symbolColor: NSColor? = nil,
+                     style: Style = .toolbar, action: @escaping () -> Void) {
+        self.init(title, symbol: symbol, symbolColor: symbolColor, style: style, action: action)
         imagePosition = .imageOnly
         toolTip = title
-        widthAnchor.constraint(equalToConstant: 32).isActive = true
-        heightAnchor.constraint(equalToConstant: 32).isActive = true
+        widthAnchor.constraint(equalToConstant: style == .accessoryBar ? 40 : 32).isActive = true
+        if style != .accessoryBar { heightAnchor.constraint(equalToConstant: 32).isActive = true }
     }
 
     convenience init(checkbox title: String, checked: Bool, action: @escaping (Bool) -> Void) {

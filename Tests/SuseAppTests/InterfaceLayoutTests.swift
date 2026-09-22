@@ -105,11 +105,29 @@ struct InterfaceLayoutTests {
             #expect(controller.view.bounds.contains(container.frame))
             #expect(!selection.intersects(container.frame))
             try render(window, named: "capture-\(name)")
-            let edit = try #require(descendants(container).compactMap { $0 as? NSButton }.first { $0.title == "编辑" })
+            let edit = try #require(descendants(container).compactMap { $0 as? NSButton }.first { $0.title == "标注" })
             controller.view.layoutSubtreeIfNeeded()
+            let mainBar = try #require(descendants(container).compactMap { $0 as? NSGlassEffectView }
+                .first { edit.isDescendant(of: $0) })
+            let buttons = descendants(mainBar).compactMap { $0 as? NSButton }
+            // Main actions remain a single compact row with equal click targets.
+            let frames = buttons.map { mainBar.convert($0.bounds, from: $0) }
+            #expect(mainBar.frame.height <= 52)
+            #expect(frames.allSatisfy { abs($0.midY - frames[0].midY) < 1 && $0.height >= 32 })
+            #expect(!descendants(mainBar).contains { $0 is NSTextField })
+            let status = try #require(descendants(controller.view).first {
+                $0.accessibilityIdentifier() == "capture-status"
+            })
+            #expect(!status.isDescendant(of: container))
+            #expect(controller.view.bounds.contains(controller.view.convert(status.bounds, from: status)))
+            let expectedAppearance: NSAppearance.Name = name.hasPrefix("contrast-") ? .accessibilityHighContrastDarkAqua : .darkAqua
+            // Recent AppKit versions resolve contrast names to the base appearance
+            // and apply the system accessibility setting during rendering.
+            #expect(container.effectiveAppearance.name == NSAppearance(named: expectedAppearance)?.name)
             let editFrame = controller.view.convert(edit.bounds, from: edit)
             try expectCompactImageTitleSpacing(edit)
             edit.performClick(nil)
+            #expect(edit.state == .on)
             controller.view.layoutSubtreeIfNeeded()
             #expect(controller.view.bounds.contains(container.frame))
             #expect(!selection.intersects(container.frame))

@@ -137,7 +137,7 @@ struct NativeIntegrationTests {
             let glass = try #require(view.subviews.first { $0 is NSGlassEffectContainerView })
             #expect(view.bounds.contains(glass.frame))
             let buttons = descendants(of: view).compactMap { $0 as? NSButton }
-            let edit = try #require(buttons.first { $0.title == "编辑" })
+            let edit = try #require(buttons.first { $0.title == "标注" })
             edit.performClick(nil)
             view.layoutSubtreeIfNeeded()
             #expect(canvas.editingEnabled)
@@ -148,6 +148,7 @@ struct NativeIntegrationTests {
             #expect(!scrolling.isEnabled)
             edit.performClick(nil)
             #expect(!canvas.editingEnabled)
+            #expect(edit.state == .off)
             #expect(scrolling.isEnabled)
         }
     }
@@ -175,15 +176,18 @@ struct NativeIntegrationTests {
         let view = controller.view
         view.layoutSubtreeIfNeeded()
         let buttons = descendants(of: view).compactMap { $0 as? NSButton }
-        let edit = try #require(buttons.first { $0.title == "编辑" })
+        let edit = try #require(buttons.first { $0.title == "标注" })
         let bars = descendants(of: view).compactMap { $0 as? NSGlassEffectView }
         let mainBar = try #require(bars.first { edit.isDescendant(of: $0) })
         let palette = try #require(bars.first { $0 !== mainBar })
         let actionButtons = buttons.filter { $0.isDescendant(of: mainBar) && !$0.isHidden }
-        let status = try #require(descendants(of: mainBar).compactMap { $0 as? NSTextField }.first)
+        let status = try #require(descendants(of: view).compactMap { $0 as? NSTextField }.first { $0.accessibilityIdentifier() == "capture-status" })
+        let statusBadge = try #require(view.subviews.first { $0 is NSBox })
         let barFrame = view.convert(mainBar.bounds, from: mainBar)
         let buttonFrames = actionButtons.map { view.convert($0.bounds, from: $0) }
         #expect(view.bounds.contains(barFrame))
+        #expect(view.bounds.contains(statusBadge.frame))
+        #expect(!statusBadge.frame.intersects(barFrame))
 
         for _ in 0..<2 {
             edit.performClick(nil)
@@ -192,6 +196,9 @@ struct NativeIntegrationTests {
             let paletteFrame = view.convert(palette.bounds, from: palette)
             #expect(view.bounds.contains(paletteFrame))
             #expect(!paletteFrame.intersects(barFrame))
+            #expect(view.bounds.contains(statusBadge.frame))
+            #expect(!statusBadge.frame.intersects(barFrame))
+            #expect(!statusBadge.frame.intersects(paletteFrame))
             #expect(view.convert(mainBar.bounds, from: mainBar) == barFrame)
             #expect(actionButtons.map { view.convert($0.bounds, from: $0) } == buttonFrames)
             controller.copyImage(completing: false)
@@ -299,7 +306,7 @@ struct NativeIntegrationTests {
         window.handleReviewKey = { [weak controller] in controller?.view.performKeyEquivalent(with: $0) ?? false }
         let views = descendants(of: controller.view)
         let canvas = try #require(views.first { $0 is AnnotationCanvas } as? AnnotationCanvas)
-        let edit = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "编辑" })
+        let edit = try #require(views.compactMap { $0 as? NSButton }.first { $0.title == "标注" })
         edit.performClick(nil)
         return (controller, window, canvas, edit, pasteboard)
     }
