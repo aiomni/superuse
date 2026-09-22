@@ -1,6 +1,22 @@
+# Build output and machine-local editor state.
 .build/
 .swiftpm/
 .DS_Store
 dist/
 *.xcuserstate
+xcuserdata/
+
+# Local configuration, signing credentials, and diagnostic output.
 .signing-identity.local
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.p12
+*.pfx
+*.key
+*.pem
+*.cer
+*.mobileprovision
+*.provisionprofile
+*.log

@@ -20,7 +20,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         features.forEach { $0.start() }
         buildApplicationMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem?.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: AppIdentity.name)
+        statusItem?.button?.image = AppIcon.statusBarImage
+        statusItem?.button?.toolTip = AppIdentity.name
         buildStatusMenu()
         if !AppLaunchContext.isLoginItem(NSAppleEventManager.shared().currentAppleEvent) {
             showDashboard()

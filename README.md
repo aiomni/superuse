@@ -21,6 +21,8 @@ open dist/superuse.app
 
 打包使用固定的代码签名证书，优先读取环境变量 `SIGNING_IDENTITY`，其次读取 `.signing-identity.local`。建议填写证书的 SHA-1，避免同名证书混淆；本机配置不提交 Git。可通过 `security find-identity -p codesigning` 查看本机身份。配置缺失、证书不可用或显式指定 `-` 时构建会失败，不会退回 ad-hoc 临时签名。
 
+公开提交中不包含本机签名配置、证书或私钥、环境变量文件及构建日志。`.build/` 和 `dist/` 可能包含本机绝对路径和签名信息，已加入 Git 忽略规则；提交问题或验证记录时，也请移除个人路径、证书指纹和真实截图 / 剪贴板内容。
+
 本机自用可以创建并复用 `Suse Local Development` 自签代码签名证书；有 Apple Development 证书时也可以指定：
 
 ```sh
