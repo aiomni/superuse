@@ -7,110 +7,116 @@ final class ScreenshotModule: FeatureModule {
     let id = "screenshot"
     let title = "截图"
     let symbol = "viewfinder"
-    let summary = "捕获屏幕的一部分，再把重点标出来。"
+    let summary = "一个快捷键，自动识别屏幕和窗口，拖动选择区域。"
     private let settings: SettingsStore
     private let capture = ScreenCaptureService()
     private let selector = SelectionController()
     private var captureTask: Task<Void, Never>?
     private var scrollSession: ScrollCaptureSession?
-    private var editors: [UUID: AnnotationWindowController] = [:]
-
-    enum Mode { case fullScreen, region, window, scroll }
 
     init(settings: SettingsStore) { self.settings = settings }
 
     var commands: [AppCommand] {
-        [command("fullScreen", title: "全屏截图", symbol: "rectangle.inset.filled", shortcut: Shortcut(keyCode: 18), mode: .fullScreen),
-         command("region", title: "区域截图", symbol: "crop", shortcut: Shortcut(keyCode: 0, modifiers: [.shift, .command]), mode: .region),
-         command("window", title: "窗口截图", symbol: "macwindow", shortcut: Shortcut(keyCode: 20), mode: .window),
-         command("scroll", title: "滚动截图", symbol: "scroll", shortcut: Shortcut(keyCode: 21), mode: .scroll)]
-    }
-
-    private func command(_ id: String, title: String, symbol: String, shortcut: Shortcut, mode: Mode) -> AppCommand {
-        AppCommand(id: "screenshot.\(id)", title: title, group: self.title, symbol: symbol,
-                   defaultShortcut: shortcut) { [weak self] in self?.begin(mode) }
+        // Retain the previous region command ID so a user's shortcut or disabled state survives.
+        [AppCommand(id: "screenshot.region", title: "截图", group: title, symbol: symbol,
+                    defaultShortcut: Shortcut(keyCode: 0, modifiers: [.shift, .command])) { [weak self] in
+            self?.begin()
+        }]
     }
 
     func start() { }
-    func stop() { captureTask?.cancel(); selector.cancel(); scrollSession?.cancel() }
+    func stop() {
+        captureTask?.cancel()
+        selector.cancel()
+        scrollSession?.cancel()
+    }
 
-    private func begin(_ mode: Mode) {
+    private func begin() {
         if let scrollSession { scrollSession.finish(); return }
-        if captureTask != nil { captureTask?.cancel(); selector.cancel(); return }
+        if captureTask != nil { stop(); return }
         let source = NSWorkspace.shared.frontmostApplication
-        // Let a menu click finish dismissing its menu before ScreenCaptureKit samples it.
         captureTask = Task { [weak self] in
             guard let self else { return }
-            defer { captureTask = nil; scrollSession = nil }
+            defer {
+                selector.close()
+                captureTask = nil
+                scrollSession = nil
+            }
             do {
+                // Allow a menu invocation to dismiss before freezing the displays.
                 try await Task.sleep(for: .milliseconds(180))
                 let content = try await capture.content()
                 try Task.checkCancellation()
-                let image: CGImage
-                if mode == .fullScreen {
-                    let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
-                    let displayID = (screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
-                    guard let display = content.displays.first(where: { $0.displayID == displayID }) ?? content.displays.first else {
-                        throw AppError("未找到可截图的屏幕。")
-                    }
-                    image = try await capture.snapshot(display: display, content: content).image
-                } else {
-                    var snapshots: [ScreenSnapshot] = []
-                    for display in content.displays {
-                        snapshots.append(try await capture.snapshot(display: display, content: content))
-                        try Task.checkCancellation()
-                    }
-                    guard !snapshots.isEmpty else { throw AppError("未找到可截图的屏幕。") }
-                    guard let selection = await selector.select(snapshots: snapshots, windows: capture.orderedWindows(in: content),
-                                                                 mode: mode == .window ? .window : .region,
-                                                                 allowsWindowMode: mode != .scroll) else { return }
+                let windows = capture.orderedWindows(in: content)
+                let candidates = windows.map { CaptureWindow(id: $0.windowID, frame: $0.frame) }
+                var snapshots: [ScreenSnapshot] = []
+                for display in content.displays {
+                    snapshots.append(try await capture.snapshot(display: display, content: content))
                     try Task.checkCancellation()
-                    switch selection {
-                    case .region(let rect, let snapshot):
-                        let cropped = try snapshot.crop(rect)
-                        if mode == .scroll {
-                            let session = ScrollCaptureSession(capture: capture, region: rect, display: snapshot.display, content: content)
-                            scrollSession = session
-                            let target: NSRunningApplication?
-                            if source?.processIdentifier != ProcessInfo.processInfo.processIdentifier { target = source }
-                            else {
-                                let center = CGPoint(x: rect.midX, y: rect.midY)
-                                let owner = capture.orderedWindows(in: content).first { $0.frame.contains(center) }?.owningApplication
-                                target = owner.flatMap { NSRunningApplication(processIdentifier: $0.processID) }
-                            }
-                            guard let stitched = await session.run(initialImage: cropped, source: target) else { return }
-                            image = stitched
-                        } else { image = cropped }
-                    case .window(let window): image = try await capture.capture(window: window)
-                    }
                 }
-                try Task.checkCancellation()
-                openEditor(image)
+                guard !snapshots.isEmpty else { throw AppError("未找到可截图的屏幕。") }
+                while !Task.isCancelled {
+                    guard let selection = await selector.select(snapshots: snapshots, windows: candidates) else { return }
+                    try Task.checkCancellation()
+                    let shouldReselect = try await review(selection, content: content, windows: windows, source: source)
+                    if !shouldReselect { return }
+                }
             } catch is CancellationError { }
-            catch { UI.error(error) }
+            catch {
+                selector.close()
+                UI.error(error)
+            }
         }
     }
 
-    func openEditor(_ image: CGImage) {
-        let id = UUID()
-        let editor = AnnotationWindowController(image: image)
-        editor.onClose = { [weak self] in self?.editors.removeValue(forKey: id) }
-        editors[id] = editor
-        editor.show()
-        if settings.defaults.bool(forKey: "screenshot.copyAfterCapture") { editor.copyImage() }
+    /// Returns true only when the user explicitly chooses to select another area.
+    private func review(_ selection: CaptureSelection, content: SCShareableContent,
+                        windows: [SCWindow], source: NSRunningApplication?) async throws -> Bool {
+        var image = try selection.snapshot.crop(selection.target.rect)
+        var allowsScrolling = true
+        var copyAutomatically = settings.defaults.bool(forKey: "screenshot.copyAfterCapture")
+        while !Task.isCancelled {
+            let action = await selector.review(image: image, selection: selection, allowsScrolling: allowsScrolling,
+                                               copyAutomatically: copyAutomatically)
+            try Task.checkCancellation()
+            switch action {
+            case .done: return false
+            case .reselect: return true
+            case .scroll:
+                copyAutomatically = false
+                selector.suspend()
+                let session = ScrollCaptureSession(capture: capture, region: selection.target.rect,
+                                                   display: selection.snapshot.display, content: content)
+                scrollSession = session
+                let center = CGPoint(x: selection.target.rect.midX, y: selection.target.rect.midY)
+                let window: SCWindow?
+                if case .window(let id) = selection.target.kind { window = windows.first { $0.windowID == id } }
+                else { window = windows.first { $0.frame.contains(center) } }
+                let owner = window?.owningApplication
+                let target = owner.flatMap { NSRunningApplication(processIdentifier: $0.processID) } ?? source
+                if let stitched = await session.run(initialImage: image, source: target) {
+                    image = stitched
+                    allowsScrolling = false
+                    copyAutomatically = settings.defaults.bool(forKey: "screenshot.copyAfterCapture")
+                }
+                scrollSession = nil
+                try Task.checkCancellation()
+            }
+        }
+        return false
     }
 
     func makeSettingsView() -> NSView {
-        UI.settingsPage("截图", subtitle: "截取、标注、复制，一次完成。", controls: [
-            ActionButton(checkbox: "截图完成后自动复制原图", checked: settings.defaults.bool(forKey: "screenshot.copyAfterCapture")) { [weak self] enabled in
+        UI.settingsPage("截图", subtitle: "自动框选、原位编辑，一个快捷键完成。", controls: [
+            ActionButton(checkbox: "截图确认后自动复制原图", checked: settings.defaults.bool(forKey: "screenshot.copyAfterCapture")) { [weak self] enabled in
                 self?.settings.defaults.set(enabled, forKey: "screenshot.copyAfterCapture")
             },
             UI.glass(UI.stack([
-                UI.label("区域和窗口自由切换", size: 16, weight: .semibold),
-                UI.label("全屏截图捕获鼠标所在的显示器。区域截图时拖动框选，按空格切换窗口模式，悬停自动识别窗口，点击确认；Esc 取消。每次区域选择位于一块显示器内。", color: .secondaryLabelColor),
+                UI.label("单击确认，拖动框选", size: 16, weight: .semibold),
+                UI.label("按截图快捷键后，鼠标在窗口上自动框选窗口，在桌面或全屏应用上框选当前屏幕。单击确认；按住拖动始终选择区域。确认后画面保持定格，可进入滚动截图、原位编辑、复制或保存。Esc 退出。", color: .secondaryLabelColor),
             ])),
-            UI.label("标注支持画笔、箭头、矩形、椭圆、文字和不透明遮挡，可撤销 / 重做。使用 ⇧⌘C 复制标注结果，⌘S 保存 PNG。", size: 12, color: .secondaryLabelColor),
-            UI.label("滚动截图：框选内容区，避开固定页眉 / 侧栏；缓慢向下滚动，每次保留至少 1/4 重叠，停稳后自动拼接。点击完成或再次按快捷键。上限为 30,000 px 高或 48 MP。", size: 12, color: .secondaryLabelColor),
+            UI.label("标注支持画笔、箭头、矩形、椭圆、文字和不透明遮挡，可撤销 / 重做。Enter 复制并完成，⌘S 保存 PNG。区域选择位于一块显示器内。", size: 12, color: .secondaryLabelColor),
+            UI.label("滚动截图：选区应避开固定页眉 / 侧栏。点击「滚动截图」后，缓慢向下滚动，每次保留至少 1/4 重叠，停稳后自动拼接。点击完成或再次按截图快捷键，返回原位预览。上限为 30,000 px 高或 48 MP。", size: 12, color: .secondaryLabelColor),
         ])
     }
 }

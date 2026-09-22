@@ -37,18 +37,6 @@ final class ScreenCaptureService {
         return ScreenSnapshot(display: display, appKitFrame: frame, image: image)
     }
 
-    func capture(window: SCWindow) async throws -> CGImage {
-        let filter = SCContentFilter(desktopIndependentWindow: window)
-        let config = configuration()
-        config.ignoreShadows = true
-        config.includeChildWindows = false
-        config.width = Int(window.frame.width * CGFloat(filter.pointPixelScale))
-        config.height = Int(window.frame.height * CGFloat(filter.pointPixelScale))
-        let result = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: config)
-        guard let image = result.sdrImage else { throw AppError("窗口已经关闭或无法捕获。") }
-        return image
-    }
-
     func capture(region: CGRect, display: SCDisplay, content: SCShareableContent) async throws -> CGImage {
         let filter = displayFilter(display, content: content)
         let config = configuration()

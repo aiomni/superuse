@@ -20,6 +20,7 @@ final class AnnotationCanvas: NSView {
     var tool: AnnotationTool = .arrow
     var ink = NSColor.systemRed
     var lineWidth: CGFloat = 5
+    var editingEnabled = true
     var requestText: ((CGPoint) -> Void)?
     var onChange: (() -> Void)?
     private var annotations: [Annotation] = []
@@ -38,7 +39,9 @@ final class AnnotationCanvas: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: tool == .text ? .iBeam : .crosshair) }
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: editingEnabled ? (tool == .text ? .iBeam : .crosshair) : .arrow)
+    }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let context = NSGraphicsContext.current?.cgContext else { return }
@@ -124,6 +127,7 @@ final class AnnotationCanvas: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        guard editingEnabled else { return }
         window?.makeFirstResponder(self)
         let point = imagePoint(event)
         if tool == .text { requestText?(point); return }
@@ -132,7 +136,7 @@ final class AnnotationCanvas: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard var annotation = draft else { return }
+        guard editingEnabled, var annotation = draft else { return }
         let point = imagePoint(event)
         if tool == .pen { annotation.points.append(point) }
         else { annotation.points = [annotation.points[0], point] }

@@ -90,9 +90,10 @@ struct NativeIntegrationTests {
 
     @Test func nativeWindowsCreateWithoutScreenCapturePermissions() throws {
         _ = NSApplication.shared
-        let editor = AnnotationWindowController(image: colorFixture())
-        editor.window?.contentView?.layoutSubtreeIfNeeded()
-        #expect(editor.window?.contentView != nil)
+        let editor = CaptureReviewController(image: colorFixture(), selectionRect: CGRect(x: 100, y: 100, width: 240, height: 160),
+                                             displaySize: CGSize(width: 1200, height: 800), allowsScrolling: true)
+        editor.view.layoutSubtreeIfNeeded()
+        #expect(editor.view.subviews.contains { $0 is NSGlassEffectView })
         let (store, settings, pasteboard, _, suite) = isolatedStore()
         defer { settings.defaults.removePersistentDomain(forName: suite); pasteboard.releaseGlobally() }
         let panel = ClipboardPanelController(store: store)
@@ -101,6 +102,105 @@ struct NativeIntegrationTests {
         let glass = try #require(panel.window?.contentView as? NSGlassEffectView)
         let content = try #require(glass.contentView)
         #expect(content.fittingSize.height <= glass.bounds.height)
+    }
+
+    @Test func screenshotHasOneCommandAndPreservesThePreviousShortcutPreference() throws {
+        let (_, settings, pasteboard, _, suite) = isolatedStore()
+        defer { settings.defaults.removePersistentDomain(forName: suite); pasteboard.releaseGlobally() }
+        let previous = Shortcut(keyCode: 22, modifiers: [.command, .shift])
+        settings.save(shortcut: previous, for: "screenshot.region")
+        let module = ScreenshotModule(settings: settings)
+        #expect(module.commands.count == 1)
+        let command = try #require(module.commands.first)
+        #expect(command.defaultShortcut == Shortcut(keyCode: 0, modifiers: [.shift, .command]))
+        let hub = ShortcutHub(settings: settings)
+        #expect(hub.shortcut(for: command) == previous)
+        settings.setShortcutDisabled(true, for: "screenshot.region")
+        #expect(hub.shortcut(for: command) == nil)
+    }
+
+    @Test func reviewEditsInPlaceAndKeepsControlsOnScreen() throws {
+        _ = NSApplication.shared
+        for rect in [CGRect(x: 300, y: 150, width: 480, height: 320),
+                     CGRect(x: 0, y: 0, width: 1200, height: 800),
+                     CGRect(x: 1160, y: 760, width: 30, height: 20)] {
+            let controller = CaptureReviewController(image: colorFixture(), selectionRect: rect,
+                                                     displaySize: CGSize(width: 1200, height: 800), allowsScrolling: true)
+            let view = controller.view
+            view.layoutSubtreeIfNeeded()
+            let scroll = try #require(view.subviews.first { $0 is NSScrollView } as? NSScrollView)
+            let canvas = try #require(scroll.documentView as? AnnotationCanvas)
+            #expect(scroll.frame == rect)
+            #expect(!canvas.editingEnabled)
+            let glass = try #require(view.subviews.first { $0 is NSGlassEffectView })
+            #expect(view.bounds.contains(glass.frame))
+            let buttons = descendants(of: view).compactMap { $0 as? NSButton }
+            let edit = try #require(buttons.first { $0.title == "编辑" })
+            edit.performClick(nil)
+            view.layoutSubtreeIfNeeded()
+            #expect(canvas.editingEnabled)
+            #expect(scroll.frame == rect)
+            #expect(view.bounds.contains(glass.frame))
+            #expect(pixels(try canvas.renderedImage()) == pixels(colorFixture()))
+            let scrolling = try #require(buttons.first { $0.title == "滚动截图" })
+            #expect(!scrolling.isEnabled)
+            edit.performClick(nil)
+            #expect(!canvas.editingEnabled)
+            #expect(scrolling.isEnabled)
+        }
+    }
+
+    @Test func selectionWaitsForMouseUpAndRetainsTheOverlay() throws {
+        _ = NSApplication.shared
+        let frame = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        let view = SelectionView(image: colorFixture(), displayFrame: frame,
+                                 windows: [CaptureWindow(id: 42, frame: CGRect(x: 100, y: 100, width: 600, height: 400))])
+        let window = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
+        window.contentView = view
+        var result: CaptureTarget?
+        view.onSelect = { result = $0; view.freeze() }
+        func event(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
+                                           windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        // The view is flipped, while window event coordinates have a bottom-left origin.
+        view.mouseDown(with: try event(.leftMouseDown, at: CGPoint(x: 200, y: 600)))
+        #expect(result == nil)
+        view.mouseDragged(with: try event(.leftMouseDragged, at: CGPoint(x: 500, y: 400)))
+        view.mouseUp(with: try event(.leftMouseUp, at: CGPoint(x: 500, y: 400)))
+        #expect(result == CaptureTarget(kind: .region, rect: CGRect(x: 200, y: 200, width: 300, height: 200)))
+        #expect(window.contentView === view)
+        #expect(window.frame == frame)
+    }
+
+    @Test func copyingReviewPreservesPixelsAndOnlyCompletesWhenRequested() throws {
+        _ = NSApplication.shared
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let image = colorFixture()
+        let controller = CaptureReviewController(image: image, selectionRect: CGRect(x: 100, y: 100, width: 240, height: 160),
+                                                 displaySize: CGSize(width: 1200, height: 800), allowsScrolling: true,
+                                                 pasteboard: pasteboard)
+        _ = controller.view
+        var completed = false
+        controller.onAction = { if case .done = $0 { completed = true } }
+        controller.copyImage(completing: false)
+        let data = try #require(pasteboard.data(forType: .png))
+        let original = try #require(NSBitmapImageRep(data: data)?.cgImage)
+        #expect(pixels(original) == pixels(image))
+        #expect(!completed)
+        let canvas = try #require(descendants(of: controller.view).first { $0 is AnnotationCanvas } as? AnnotationCanvas)
+        canvas.addText("A", at: CGPoint(x: 12, y: 4))
+        controller.copyImage(completing: true)
+        #expect(completed)
+        let editedData = try #require(pasteboard.data(forType: .png))
+        let edited = try #require(NSBitmapImageRep(data: editedData)?.cgImage)
+        #expect(pixels(edited) != pixels(original))
+        #expect(edited.width == image.width && edited.height == image.height)
+    }
+
+    private func descendants(of view: NSView) -> [NSView] {
+        view.subviews.flatMap { [$0] + descendants(of: $0) }
     }
 
     private func colorFixture() -> CGImage {

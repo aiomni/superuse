@@ -10,10 +10,12 @@ final class ScrollCaptureSession {
     private let display: SCDisplay
     private var content: SCShareableContent
     private var panel: NSPanel?
+    private var outline: NSWindow?
     private var task: Task<Void, Never>?
     private var completion: CheckedContinuation<CGImage?, Never>?
     private var paused = false
     private var finishing = false
+    private var finishRequested = false
     private var cancelled = false
     private var frameCount = 1
     private let status = UI.label("准备捕获…", size: 12, color: .secondaryLabelColor)
@@ -28,10 +30,13 @@ final class ScrollCaptureSession {
 
     func run(initialImage: CGImage, source: NSRunningApplication?) async -> CGImage? {
         let initial = await stitcher.append(initialImage)
+        guard !cancelled, !Task.isCancelled else { return nil }
         guard case .appended = initial else { UI.error(AppError("选区过大，请缩小后重试。")); return nil }
+        if finishRequested { return await stitcher.makeImage() }
         return await withCheckedContinuation { continuation in
             completion = continuation
             showControls()
+            showOutline()
             source?.activate()
             task = Task { [weak self] in
                 guard let self else { return }
@@ -55,11 +60,11 @@ final class ScrollCaptureSession {
                             styleMask: [.titled, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
-        panel.level = .floating
+        panel.level = .screenSaver
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
         let pause = ActionButton("暂停") { [weak self] in self?.togglePause() }
         pauseButton = pause
@@ -70,12 +75,33 @@ final class ScrollCaptureSession {
                       ActionButton("完成截图", symbol: "checkmark") { [weak self] in self?.finish() }], axis: .horizontal),
         ], spacing: 12)
         panel.contentView = UI.glass(controls, inset: 18)
-        if let screen = NSScreen.screens.first(where: { $0.frame.contains(NSEvent.mouseLocation) }) ?? NSScreen.main {
+        if let screen = NSScreen.screens.first(where: {
+            ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID
+        }) ?? NSScreen.main {
             panel.setFrameOrigin(CGPoint(x: screen.visibleFrame.midX - 260, y: screen.visibleFrame.minY + 24))
         }
         panel.orderFrontRegardless()
         self.panel = panel
-        status.stringValue = "已记录第 1 帧 · 再按滚动截图快捷键完成"
+        status.stringValue = "已记录第 1 帧 · 再按截图快捷键完成"
+    }
+
+    private func showOutline() {
+        let frame = ScreenGeometry.quartzRect(fromAppKit: region, mainDisplayHeight: CGDisplayBounds(CGMainDisplayID()).height)
+        let window = NSWindow(contentRect: frame.insetBy(dx: -2, dy: -2), styleMask: .borderless,
+                              backing: .buffered, defer: false)
+        window.level = .screenSaver
+        window.backgroundColor = .clear
+        window.isOpaque = false
+        window.hasShadow = false
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        let border = NSView(frame: CGRect(origin: .zero, size: window.frame.size))
+        border.wantsLayer = true
+        border.layer?.borderColor = NSColor.controlAccentColor.cgColor
+        border.layer?.borderWidth = 2
+        window.contentView = border
+        window.orderFrontRegardless()
+        outline = window
     }
 
     private func sampleUntilCancelled() async {
@@ -115,6 +141,7 @@ final class ScrollCaptureSession {
     }
 
     func finish() {
+        guard completion != nil else { finishRequested = true; return }
         guard !finishing else { return }
         finishing = true
         task?.cancel()
@@ -136,7 +163,9 @@ final class ScrollCaptureSession {
             }
             guard !cancelled else { return }
             let result = await stitcher.makeImage()
+            guard !cancelled else { return }
             panel?.orderOut(nil)
+            outline?.orderOut(nil)
             completion?.resume(returning: result)
             completion = nil
             if result == nil { UI.error(AppError("长图生成失败，可能是可用内存不足。")) }
@@ -147,6 +176,7 @@ final class ScrollCaptureSession {
         cancelled = true
         task?.cancel()
         panel?.orderOut(nil)
+        outline?.orderOut(nil)
         completion?.resume(returning: nil)
         completion = nil
     }
