@@ -8,12 +8,13 @@ final class ScrollCaptureSession {
     private let stitcher = ScrollStitcher()
     private let region: CGRect
     private let display: SCDisplay
-    private let content: SCShareableContent
+    private var content: SCShareableContent
     private var panel: NSPanel?
     private var task: Task<Void, Never>?
     private var completion: CheckedContinuation<CGImage?, Never>?
     private var paused = false
     private var finishing = false
+    private var cancelled = false
     private var frameCount = 1
     private let status = UI.label("准备捕获…", size: 12, color: .secondaryLabelColor)
     private var pauseButton: ActionButton?
@@ -32,7 +33,20 @@ final class ScrollCaptureSession {
             completion = continuation
             showControls()
             source?.activate()
-            task = Task { [weak self] in await self?.sampleUntilCancelled() }
+            task = Task { [weak self] in
+                guard let self else { return }
+                do {
+                    // Refresh after creating the HUD, so even a previously hidden Suse is in the
+                    // application exclusion list. Otherwise its new controls could enter a frame.
+                    content = try await capture.content()
+                    try Task.checkCancellation()
+                    await sampleUntilCancelled()
+                } catch is CancellationError { }
+                catch {
+                    paused = true
+                    status.stringValue = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -71,6 +85,7 @@ final class ScrollCaptureSession {
                 guard !paused else { continue }
                 let image = try await capture.capture(region: region, display: display, content: content)
                 try Task.checkCancellation()
+                guard !paused else { continue }
                 let result = await stitcher.ingest(image)
                 try Task.checkCancellation()
                 switch result {
@@ -107,6 +122,19 @@ final class ScrollCaptureSession {
         Task { [weak self] in
             guard let self else { return }
             await task?.value
+            guard !cancelled else { return }
+            // Include the last stopped viewport even when Finish was clicked before the next poll.
+            if !paused {
+                do {
+                    let first = try await capture.capture(region: region, display: display, content: content)
+                    _ = await stitcher.ingest(first)
+                    try await Task.sleep(for: .milliseconds(180))
+                    guard !cancelled else { return }
+                    let second = try await capture.capture(region: region, display: display, content: content)
+                    _ = await stitcher.ingest(second)
+                } catch { /* Previously accepted strips remain a valid result. */ }
+            }
+            guard !cancelled else { return }
             let result = await stitcher.makeImage()
             panel?.orderOut(nil)
             completion?.resume(returning: result)
@@ -116,6 +144,7 @@ final class ScrollCaptureSession {
     }
 
     func cancel() {
+        cancelled = true
         task?.cancel()
         panel?.orderOut(nil)
         completion?.resume(returning: nil)

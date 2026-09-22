@@ -55,7 +55,8 @@ public actor ScrollStitcher {
             return .rejected("未找到可靠重叠。请向上回退一些，再缓慢向下滚动；保留至少四分之一重叠。")
         }
         guard totalHeight + shift <= heightLimit, width <= pixelLimit / (totalHeight + shift) else { return .limitReached }
-        guard let strip = image.cropping(to: CGRect(x: 0, y: image.height - shift, width: width, height: shift)) else {
+        guard let crop = image.cropping(to: CGRect(x: 0, y: image.height - shift, width: width, height: shift)),
+              let strip = detachedCopy(crop) else {
             return .rejected("无法裁剪新内容。")
         }
         strips.append(strip)
@@ -74,6 +75,16 @@ public actor ScrollStitcher {
             context.draw(strip, in: CGRect(x: 0, y: totalHeight - offset - strip.height, width: width, height: strip.height))
             offset += strip.height
         }
+        return context.makeImage()
+    }
+
+    private func detachedCopy(_ image: CGImage) -> CGImage? {
+        // CGImage.cropping may retain the entire source buffer. Materialize the small strip so
+        // hundreds of short scrolls cannot retain hundreds of full viewport images.
+        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         return context.makeImage()
     }
 }

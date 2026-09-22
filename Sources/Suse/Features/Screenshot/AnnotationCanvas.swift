@@ -142,7 +142,7 @@ final class AnnotationCanvas: NSView {
 
     override func mouseUp(with event: NSEvent) {
         guard let draft else { return }
-        replaceAnnotations(annotations + [draft])
+        if draft.tool == .pen || draft.points.count > 1 { replaceAnnotations(annotations + [draft]) }
         self.draft = nil
         needsDisplay = true
     }

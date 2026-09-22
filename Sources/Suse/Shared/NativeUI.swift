@@ -37,6 +37,7 @@ enum UI {
         let glass = NSGlassEffectView()
         glass.cornerRadius = radius
         glass.style = .regular
+        if #available(macOS 27.0, *) { glass.effectIsInteractive = true }
         glass.contentView = wrapper
         return glass
     }

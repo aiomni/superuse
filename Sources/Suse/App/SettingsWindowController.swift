@@ -1,7 +1,7 @@
 import AppKit
 
 @MainActor
-final class SettingsWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate {
+final class SettingsWindowController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate {
     private let features: [any FeatureModule]
     private let hub: ShortcutHub
     private let sidebar = NSTableView()
@@ -14,14 +14,17 @@ final class SettingsWindowController: NSWindowController, NSTableViewDataSource,
                               styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = "Suse 设置"
         window.minSize = NSSize(width: 740, height: 510)
+        window.isReleasedWhenClosed = false
         window.setFrameAutosaveName("Settings")
         super.init(window: window)
+        window.delegate = self
         build()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     func show() { showWindow(nil); window?.center(); NSApp.activate() }
+    func windowWillClose(_ notification: Notification) { window?.makeFirstResponder(nil); hub.resumeAfterRecording() }
 
     private func build() {
         let split = NSSplitView()

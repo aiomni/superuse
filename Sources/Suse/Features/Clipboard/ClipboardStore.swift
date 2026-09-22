@@ -3,12 +3,14 @@ import SuseCore
 
 private actor ClipboardDisk {
     private var lastRevision = -1
-    private let url = URL.applicationSupportDirectory.appending(path: "Suse/clipboard-history.json")
+    private let url: URL
+    init(url: URL) { self.url = url }
 
     func load() throws -> [ClipboardEntry] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [] }
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size <= 48 * 1_024 * 1_024 else { throw AppError("剪贴板历史文件过大，已跳过加载。") }
+        // JSON can expand a control character to six bytes; accept every valid bounded history.
+        guard size <= 196 * 1_024 * 1_024 else { throw AppError("剪贴板历史文件过大，已跳过加载。") }
         return try JSONDecoder().decode([ClipboardEntry].self, from: Data(contentsOf: url))
     }
 
@@ -18,7 +20,7 @@ private actor ClipboardDisk {
         if let entries {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
-            try JSONEncoder().encode(entries).write(to: url, options: [.atomic, .completeFileProtection])
+            try JSONEncoder().encode(entries).write(to: url, options: .atomic)
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         } else if FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
@@ -30,7 +32,7 @@ private actor ClipboardDisk {
 final class ClipboardStore {
     private let settings: SettingsStore
     private let pasteboard: NSPasteboard
-    private let disk = ClipboardDisk()
+    private let disk: ClipboardDisk
     private var timer: Timer?
     private var saveTask: Task<Void, Never>?
     private var startTask: Task<Void, Never>?
@@ -40,9 +42,20 @@ final class ClipboardStore {
     private(set) var persistenceError: String?
     var onChange: (() -> Void)?
 
-    init(settings: SettingsStore, pasteboard: NSPasteboard = .general) {
+    var accessNotice: String? {
+        switch pasteboard.accessBehavior {
+        case .alwaysDeny: "系统已阻止读取剪贴板，请在系统隐私设置中允许 Suse。"
+        case .ask, .default: "自动记录需允许读取剪贴板；可在系统隐私设置中为 Suse 设为始终允许。"
+        case .alwaysAllow: nil
+        @unknown default: nil
+        }
+    }
+
+    init(settings: SettingsStore, pasteboard: NSPasteboard = .general,
+         persistenceURL: URL = URL.applicationSupportDirectory.appending(path: "Suse/clipboard-history.json")) {
         self.settings = settings
         self.pasteboard = pasteboard
+        disk = ClipboardDisk(url: persistenceURL)
         lastChange = pasteboard.changeCount
         history = ClipboardHistory(countLimit: settings.defaults.integer(forKey: "clipboard.limit"))
     }
@@ -51,18 +64,27 @@ final class ClipboardStore {
         startTask = Task { [weak self] in
             guard let self else { return }
             if settings.defaults.bool(forKey: "clipboard.persist") {
-                do { history.restore(try await disk.load()) }
+                let startingRevision = revision
+                do {
+                    let saved = try await disk.load()
+                    if !Task.isCancelled, startingRevision == revision,
+                       settings.defaults.bool(forKey: "clipboard.persist") { history.restore(saved) }
+                }
+                catch { persistenceError = error.localizedDescription }
+            } else {
+                do { try await disk.save(nil, revision: revision) }
                 catch { persistenceError = error.localizedDescription }
             }
             guard !Task.isCancelled else { return }
             onChange?()
             timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.poll() }
+                MainActor.assumeIsolated { self?.checkForChanges() }
             }
         }
     }
 
     func stop() { timer?.invalidate(); timer = nil; startTask?.cancel() }
+    func flush() async { await saveTask?.value }
 
     func settingsChanged() {
         history.countLimit = settings.defaults.integer(forKey: "clipboard.limit")
@@ -70,10 +92,11 @@ final class ClipboardStore {
         changed()
     }
 
-    private func poll() {
+    func checkForChanges() {
         guard pasteboard.changeCount != lastChange else { return }
         lastChange = pasteboard.changeCount
         guard settings.defaults.bool(forKey: "clipboard.enabled") else { return }
+        guard pasteboard.accessBehavior != .alwaysDeny else { onChange?(); return }
         let excluded = settings.defaults.string(forKey: "clipboard.excludedApps") ?? ""
         let source = NSWorkspace.shared.frontmostApplication
         let identifiers = excluded.split(whereSeparator: { $0 == "\n" || $0 == "," }).map { $0.trimmingCharacters(in: .whitespaces) }
@@ -130,7 +153,10 @@ final class ClipboardStore {
                 try await disk.save(snapshot, revision: version)
                 self?.persistenceError = nil
             } catch is CancellationError { }
-            catch { self?.persistenceError = error.localizedDescription }
+            catch {
+                self?.persistenceError = error.localizedDescription
+                self?.onChange?()
+            }
         }
     }
 }

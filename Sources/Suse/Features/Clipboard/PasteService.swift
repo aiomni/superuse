@@ -3,7 +3,7 @@ import ApplicationServices
 
 @MainActor
 final class PasteService {
-    func paste(to application: NSRunningApplication?) async throws {
+    func paste(to application: NSRunningApplication?, expectedChangeCount: Int) async throws {
         guard let application, !application.isTerminated,
               application.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
             throw AppError("内容已复制。请切换到目标输入框，按 ⌘V 粘贴。")
@@ -21,6 +21,9 @@ final class PasteService {
             let modifiers = CGEventSource.flagsState(.combinedSessionState)
             if NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier,
                modifiers.intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift]).isEmpty {
+                guard NSPasteboard.general.changeCount == expectedChangeCount else {
+                    throw AppError("剪贴板在等待粘贴时已改变，本次粘贴已取消。")
+                }
                 guard let source = CGEventSource(stateID: .combinedSessionState),
                       let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
                       let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else {

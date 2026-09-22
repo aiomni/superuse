@@ -9,6 +9,7 @@ final class ShortcutHub {
     private var registrations: [String: EventHotKeyRef] = [:]
     private var eventHandler: EventHandlerRef?
     private var numericIDs: [UInt32: String] = [:]
+    private var suspended = false
     private(set) var commands: [AppCommand] = []
     private(set) var errors: [String: String] = [:]
     var onChange: (() -> Void)?
@@ -19,7 +20,7 @@ final class ShortcutHub {
         self.commands = commands
         var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         let context = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
+        let installResult = InstallEventHandler(GetApplicationEventTarget(), { _, event, context in
             guard let event, let context else { return OSStatus(eventNotHandledErr) }
             var key = EventHotKeyID()
             let result = GetEventParameter(event, EventParamName(kEventParamDirectObject),
@@ -31,6 +32,10 @@ final class ShortcutHub {
             }
             return noErr
         }, 1, &event, context, &eventHandler)
+        guard installResult == noErr else {
+            for command in commands { errors[command.id] = "快捷键事件监听失败（\(installResult)），请重新启动 Suse。" }
+            return
+        }
         for (index, command) in commands.enumerated() {
             numericIDs[UInt32(index + 1)] = command.id
             if let shortcut = shortcut(for: command) {
@@ -45,6 +50,25 @@ final class ShortcutHub {
         registrations.removeAll()
         if let eventHandler { RemoveEventHandler(eventHandler) }
         eventHandler = nil
+    }
+
+    func suspendForRecording() {
+        suspended = true
+        registrations.values.forEach { UnregisterEventHotKey($0) }
+        registrations.removeAll()
+    }
+
+    func resumeAfterRecording() {
+        guard suspended else { return }
+        suspended = false
+        guard eventHandler != nil else { return }
+        errors.removeAll()
+        for command in commands {
+            guard let shortcut = shortcut(for: command) else { continue }
+            do { try register(shortcut, command: command) }
+            catch { errors[command.id] = error.localizedDescription }
+        }
+        onChange?()
     }
 
     func shortcut(for command: AppCommand) -> Shortcut? {
@@ -62,12 +86,13 @@ final class ShortcutHub {
         if let old = registrations.removeValue(forKey: command.id) { UnregisterEventHotKey(old) }
         do {
             if let shortcut { try register(shortcut, command: command) }
+            if suspended, let probe = registrations.removeValue(forKey: command.id) { UnregisterEventHotKey(probe) }
             settings.save(shortcut: shortcut, for: command.id)
             settings.setShortcutDisabled(shortcut == nil, for: command.id)
             errors.removeValue(forKey: command.id)
             onChange?()
         } catch {
-            if let previous { try? register(previous, command: command) }
+            if let previous, !suspended { try? register(previous, command: command) }
             throw error
         }
     }
@@ -132,15 +157,20 @@ final class ShortcutRecorder: NSButton {
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     @objc private func beginRecording() {
+        window?.makeFirstResponder(self)
+        hub.suspendForRecording()
         recording = true
         title = "按下快捷键…"
-        window?.makeFirstResponder(self)
     }
 
     override func resignFirstResponder() -> Bool {
-        recording = false
-        refresh()
+        finishRecording()
         return super.resignFirstResponder()
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        if newWindow == nil { finishRecording() }
+        super.viewWillMove(toWindow: newWindow)
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -151,12 +181,18 @@ final class ShortcutRecorder: NSButton {
 
     override func keyDown(with event: NSEvent) {
         guard recording else { super.keyDown(with: event); return }
-        if event.keyCode == 53 { recording = false; refresh(); return }
+        if event.keyCode == 53 { finishRecording(); return }
         let shortcut: Shortcut? = event.keyCode == 51 ? nil :
             Shortcut(keyCode: UInt32(event.keyCode), modifiers: .init(eventFlags: event.modifierFlags))
         do { try hub.update(shortcut, for: command) }
-        catch { UI.error(error, in: window) }
+        catch { finishRecording(); UI.error(error, in: window) }
+        finishRecording()
+    }
+
+    private func finishRecording() {
+        guard recording else { return }
         recording = false
+        hub.resumeAfterRecording()
         refresh()
     }
 

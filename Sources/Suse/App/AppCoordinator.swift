@@ -34,6 +34,16 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         hub.stop()
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        features.forEach { $0.stop() }
+        hub.stop()
+        Task {
+            for feature in features { await feature.prepareForTermination() }
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showDashboard()
         return true
@@ -48,6 +58,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "退出 Suse", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu
         menu.addItem(app)
+        let file = NSMenuItem()
+        file.title = "文件"
+        let fileMenu = NSMenu(title: "文件")
+        fileMenu.addItem(withTitle: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        file.submenu = fileMenu
+        menu.addItem(file)
         let edit = NSMenuItem()
         edit.title = "编辑"
         let editMenu = NSMenu(title: "编辑")

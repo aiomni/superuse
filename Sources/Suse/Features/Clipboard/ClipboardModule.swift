@@ -23,6 +23,7 @@ final class ClipboardModule: FeatureModule {
 
     func start() { store.start() }
     func stop() { store.stop() }
+    func prepareForTermination() async { await store.flush() }
 
     func makeSettingsView() -> NSView {
         let defaults = settings.defaults
@@ -46,6 +47,9 @@ final class ClipboardModule: FeatureModule {
             UI.stack([UI.label("最多保留"), limit], axis: .horizontal),
             UI.stack([UI.label("排除应用 · Bundle ID，以逗号分隔，按回车保存", size: 12), exclusions], spacing: 6),
             ActionButton("清空全部历史", symbol: "trash") { [weak self] in self?.store.clear() },
+            ActionButton("系统剪贴板访问设置", symbol: "lock.shield") {
+                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!)
+            },
             UI.label("↑↓ 选择，Return 复制，⌘Return 粘贴到唤起前的应用，⌘E 编辑，⌘Delete 删除。\n支持文本与图片；单条上限 8 MB，总计上限 32 MB。敏感标记由来源应用提供，无法识别所有秘密内容。", size: 12, color: .secondaryLabelColor),
         ])
     }

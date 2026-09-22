@@ -123,6 +123,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
             table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         }
         status.stringValue = "\(visibleEntries.count) 条记录  ·  ↑↓ 选择  ·  ↩ 复制  ·  ⌘↩ 粘贴  ·  ⌘E 编辑"
+        if let notice = store.accessNotice { status.stringValue = notice }
         if let error = store.persistenceError { status.stringValue = "历史保存失败：\(error)" }
     }
 
@@ -132,7 +133,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let entry = visibleEntries[row]
         let image: NSImage
-        if case .image(let data) = entry.content { image = NSImage(data: data) ?? NSImage() }
+        if case .image(let data) = entry.content { image = ImageThumbnail.make(from: data) ?? NSImage() }
         else { image = NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: "文本")! }
         let icon = NSImageView(image: image)
         icon.imageScaling = .scaleProportionallyUpOrDown
@@ -175,9 +176,10 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         window?.orderOut(nil)
         guard paste else { return }
         let destination = sourceApplication
+        let expectedChangeCount = NSPasteboard.general.changeCount
         pasteTask = Task { [weak self] in
             guard let self else { return }
-            do { try await pasteService.paste(to: destination) }
+            do { try await pasteService.paste(to: destination, expectedChangeCount: expectedChangeCount) }
             catch is CancellationError { }
             catch { UI.error(error) }
         }

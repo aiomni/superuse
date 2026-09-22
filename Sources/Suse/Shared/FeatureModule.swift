@@ -11,7 +11,12 @@ protocol FeatureModule: AnyObject {
     var commands: [AppCommand] { get }
     func start()
     func stop()
+    func prepareForTermination() async
     func makeSettingsView() -> NSView
+}
+
+extension FeatureModule {
+    func prepareForTermination() async { }
 }
 
 @MainActor
