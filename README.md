@@ -9,19 +9,23 @@
 应用需要 macOS 26+；构建使用 Xcode 27+ / Swift 6.4 工具链。本次在 macOS 27 / Xcode 27 验证。
 
 ```sh
+cp .signing-identity.example .signing-identity.local
+# 将 .signing-identity.local 的内容改为本机代码签名证书的 SHA-1 或名称。
 ./scripts/build-app.sh release
 open dist/Suse.app
 ```
 
 也可以在 Xcode 中打开 `Package.swift` 编辑和调试。涉及权限时，请通过打包后的 `Suse.app` 运行，以便系统识别应用身份。关闭工具箱后应用继续在菜单栏运行；在菜单中选择“退出 Suse”结束应用。
 
-默认生成本机架构的 ad-hoc 签名应用。若有 Apple Development 签名身份，可以使用：
+打包使用固定的代码签名证书，优先读取环境变量 `SIGNING_IDENTITY`，其次读取 `.signing-identity.local`。建议填写证书的 SHA-1，避免同名证书混淆；本机配置不提交 Git。可通过 `security find-identity -p codesigning` 查看本机身份。配置缺失、证书不可用或显式指定 `-` 时构建会失败，不会退回 ad-hoc 临时签名。
+
+本机自用可以创建并复用 `Suse Local Development` 自签代码签名证书；有 Apple Development 证书时也可以指定：
 
 ```sh
 SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build-app.sh release
 ```
 
-使用固定路径和开发者签名可以保持权限身份稳定。ad-hoc 构建更新后 macOS 可能要求重新授权。分发给其他 Mac 前需要开发者签名和公证。
+首次从临时签名切换到固定证书后，需要退出应用，用 `dist/Suse.app` 替换 `/Applications/Suse.app`，在系统录屏权限列表中移除旧 Suse，再重新添加 `/Applications/Suse.app` 并授权。之后保持签名证书、Bundle ID 和安装路径一致。不要删除并重建同名证书；同名不代表同一身份。保存好对应私钥，证书到期或更换后可能需要重新授权。分发给其他 Mac 前使用 Developer ID Application 签名和公证。
 
 ## 默认快捷键
 

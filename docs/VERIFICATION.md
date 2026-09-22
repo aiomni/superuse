@@ -6,11 +6,15 @@
 
 - `swift test`：10 个核心测试与 4 个 AppKit 集成测试全部通过。
 - `./scripts/build-app.sh release`：构建通过，生成约 1.8 MB 的 arm64 `dist/Suse.app`。
-- `codesign --verify --deep --strict dist/Suse.app`：ad-hoc 应用包签名验证通过。
+- `codesign --verify --deep --strict dist/Suse.app`：使用 `Suse Local Development` 证书的应用包签名验证通过。
+- 修改临时应用副本的版本号并用同一证书重新签名：CDHash 变化，designated requirement 保持一致，且新副本通过原 requirement 验证。签名身份绑定 Bundle ID 与证书，不依赖构建内容哈希。
+- 在无本机签名配置的临时目录执行打包脚本：缺少签名身份或显式指定 `SIGNING_IDENTITY=-` 均在构建前失败，不会退回临时签名。
 - `plutil -lint dist/Suse.app/Contents/Info.plist`、`git diff --check`：通过。
 - 没有 SwiftUI import，没有第三方包依赖。
 
 AppKit 集成测试使用专用 NSPasteboard、临时 UserDefaults suite 和临时目录，检查实际读写和图片像素。不会使用系统剪贴板作为测试数据源。
+
+本次签名调整已验证打包产物，尚未替换 `/Applications/Suse.app` 或重新授予录屏权限。签名稳定性验证不能代替安装后截图权限的实机验证；首次从 ad-hoc 签名切换到证书时需要重新授权。
 
 ## 原生界面
 

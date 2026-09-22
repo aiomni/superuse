@@ -3,3 +3,4 @@
 .DS_Store
 dist/
 *.xcuserstate
+.signing-identity.local
