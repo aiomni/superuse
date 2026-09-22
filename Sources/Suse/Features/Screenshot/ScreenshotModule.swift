@@ -108,15 +108,19 @@ final class ScreenshotModule: FeatureModule {
 
     func makeSettingsView() -> NSView {
         UI.settingsPage("截图", subtitle: "自动框选、原位编辑，一个快捷键完成。", controls: [
-            ActionButton(checkbox: "截图确认后自动复制原图", checked: settings.defaults.bool(forKey: "screenshot.copyAfterCapture")) { [weak self] enabled in
+            UI.groupedRows([UI.toggleRow("自动复制截图", subtitle: "确认选区后复制原图。", isOn: settings.defaults.bool(forKey: "screenshot.copyAfterCapture")) { [weak self] enabled in
                 self?.settings.defaults.set(enabled, forKey: "screenshot.copyAfterCapture")
-            },
-            UI.glass(UI.stack([
+            }]),
+            UI.section(UI.stack([
                 UI.label("单击确认，拖动框选", size: 16, weight: .semibold),
                 UI.label("按截图快捷键后，鼠标在窗口上自动框选窗口，在桌面或全屏应用上框选当前屏幕。单击确认；按住拖动始终选择区域。确认后画面保持定格，可进入滚动截图、原位编辑、复制或保存。Esc 退出。", color: .secondaryLabelColor),
             ])),
-            UI.label("标注支持画笔、箭头、矩形、椭圆、文字和不透明遮挡，可撤销 / 重做。Enter 复制并完成，⌘S 保存 PNG。区域选择位于一块显示器内。", size: 12, color: .secondaryLabelColor),
-            UI.label("滚动截图：选区应避开固定页眉 / 侧栏。点击「滚动截图」后，缓慢向下滚动，每次保留至少 1/4 重叠，停稳后自动拼接。点击完成或再次按截图快捷键，返回原位预览。上限为 30,000 px 高或 48 MP。", size: 12, color: .secondaryLabelColor),
+            UI.section(UI.stack([
+                UI.label("编辑与滚动", size: 14, weight: .semibold),
+                UI.label("标注支持画笔、箭头、矩形、椭圆、文字和不透明遮挡，可撤销 / 重做。Enter 复制并完成，⌘S 保存 PNG。", size: 12, color: .secondaryLabelColor),
+                UI.label("滚动截图时避开固定页眉 / 侧栏，缓慢向下滚动，每次保留至少 1/4 重叠。点击完成或再次按截图快捷键，返回原位预览。", size: 12, color: .secondaryLabelColor),
+            ], spacing: 10)),
+            UI.label("区域选择位于一块显示器内。长图上限为 30,000 px 高或 48 MP。", size: 11, color: .secondaryLabelColor),
         ])
     }
 }

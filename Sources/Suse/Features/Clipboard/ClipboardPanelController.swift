@@ -14,11 +14,12 @@ private final class HistoryPanel: NSPanel {
 
 @MainActor
 final class ClipboardPanelController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate,
-                                      NSSearchFieldDelegate, NSWindowDelegate {
+                                      NSSearchFieldDelegate, NSWindowDelegate, NSToolbarDelegate {
     private let store: ClipboardStore
     private let pasteService = PasteService()
     private let table = NSTableView()
     private let search = NSSearchField()
+    private let searchItem = NSSearchToolbarItem(itemIdentifier: .init("clipboard.search"))
     private let emptyState = UI.label("还没有剪贴板记录\n复制一段文字或图片，它会出现在这里。", size: 14, color: .secondaryLabelColor)
     private let status = UI.label("", size: 11, color: .secondaryLabelColor)
     private var visibleEntries: [ClipboardEntry] = []
@@ -29,9 +30,8 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         self.store = store
         let panel = HistoryPanel(contentRect: NSRect(x: 0, y: 0, width: 620, height: 490),
                                  styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
-        panel.title = "剪贴板历史"
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
+        panel.title = "剪贴板"
+        panel.toolbarStyle = .unifiedCompact
         panel.isFloatingPanel = true
         panel.level = .floating
         panel.hidesOnDeactivate = false
@@ -55,7 +55,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         window?.center()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate()
-        window?.makeFirstResponder(search)
+        searchItem.beginSearchInteraction()
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -67,13 +67,20 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         search.delegate = self
         search.sendsSearchStringImmediately = true
         search.controlSize = .regular
+        searchItem.searchField = search
+        searchItem.preferredWidthForSearchField = 360
+        searchItem.resignsFirstResponderWithCancel = false
+        let toolbar = NSToolbar(identifier: "clipboard")
+        toolbar.delegate = self
+        toolbar.displayMode = .iconOnly
+        window?.toolbar = toolbar
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("content"))
         table.addTableColumn(column)
         table.headerView = nil
         table.rowHeight = 58
         table.intercellSpacing = NSSize(width: 0, height: 3)
         table.style = .inset
-        table.backgroundColor = .clear
+        table.backgroundColor = .controlBackgroundColor
         table.dataSource = self
         table.delegate = self
         table.target = self
@@ -82,8 +89,8 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
-        scroll.drawsBackground = false
-        scroll.heightAnchor.constraint(equalToConstant: 320).isActive = true
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .controlBackgroundColor
         let list = NSView()
         list.addSubview(scroll)
         UI.pin(scroll, to: list)
@@ -95,17 +102,35 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
             emptyState.centerYAnchor.constraint(equalTo: list.centerYAnchor),
         ])
         let actions = UI.stack([
-            ActionButton("复制", symbol: "doc.on.doc") { [weak self] in self?.commit(paste: false) },
-            ActionButton("粘贴到原应用", symbol: "arrow.turn.down.left") { [weak self] in self?.commit(paste: true) },
-            ActionButton("编辑", symbol: "pencil") { [weak self] in self?.editSelected() },
+            ActionButton("复制", symbol: "doc.on.doc", style: .glass) { [weak self] in self?.commit(paste: false) },
+            ActionButton("粘贴到原应用", symbol: "arrow.turn.down.left", style: .glass) { [weak self] in self?.commit(paste: true) },
+            ActionButton("编辑", symbol: "pencil", style: .glass) { [weak self] in self?.editSelected() },
         ], axis: .horizontal, spacing: 8)
-        let content = UI.stack([
-            UI.label("剪贴板", size: 20, weight: .semibold), search, list, actions, status,
-        ], spacing: 10)
-        for view in [search, list] {
-            view.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
-        }
-        window?.contentView = UI.glass(content, radius: 20, inset: 20)
+        let footer = UI.stack([UI.glassContainer(actions), status], spacing: 8)
+        let content = ContentBackgroundView()
+        content.addSubview(list)
+        content.addSubview(footer)
+        list.translatesAutoresizingMaskIntoConstraints = false
+        footer.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            list.topAnchor.constraint(equalTo: content.safeAreaLayoutGuide.topAnchor, constant: 4),
+            list.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
+            list.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+            list.bottomAnchor.constraint(equalTo: footer.topAnchor, constant: -12),
+            list.heightAnchor.constraint(greaterThanOrEqualToConstant: 220),
+            footer.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 18),
+            footer.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -18),
+            footer.bottomAnchor.constraint(equalTo: content.bottomAnchor, constant: -14),
+        ])
+        window?.contentView = content
+        reload()
+    }
+
+    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.flexibleSpace, searchItem.itemIdentifier] }
+    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [searchItem.itemIdentifier] }
+    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+                 willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+        itemIdentifier == searchItem.itemIdentifier ? searchItem : nil
     }
 
     private var selectedEntry: ClipboardEntry? {
@@ -160,7 +185,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
             table.scrollRowToVisible(index)
         case 36, 76: commit(paste: command)
         case 14 where command: editSelected()
-        case 3 where command: window?.makeFirstResponder(search)
+        case 3 where command: searchItem.beginSearchInteraction()
         case 51 where command:
             if let entry = selectedEntry { store.remove(entry) }
         default: return false
@@ -189,7 +214,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         guard let entry = selectedEntry, case .text(let text) = entry.content, let parent = window else {
             NSSound.beep(); return
         }
-        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 550, height: 360),
+        let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 550, height: 380),
                              styleMask: [.titled], backing: .buffered, defer: false)
         sheet.title = "编辑历史内容"
         let editor = NSTextView()
@@ -201,7 +226,9 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         editor.isAutomaticQuoteSubstitutionEnabled = false
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
-        scroll.borderType = .bezelBorder
+        scroll.borderType = .noBorder
+        scroll.drawsBackground = true
+        scroll.backgroundColor = .textBackgroundColor
         scroll.documentView = editor
         editor.isVerticallyResizable = true
         editor.autoresizingMask = [.width]
@@ -221,7 +248,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
                                 UI.stack([cancel, save], axis: .horizontal)], spacing: 16)
         scroll.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
         scroll.heightAnchor.constraint(equalToConstant: 250).isActive = true
-        sheet.contentView = UI.glass(content)
+        sheet.contentView = UI.padded(content)
         parent.beginSheet(sheet)
         sheet.makeFirstResponder(editor)
     }

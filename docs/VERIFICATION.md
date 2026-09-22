@@ -4,24 +4,34 @@
 
 ## 自动验证
 
-- `swift test`：16 个核心测试与 8 个 AppKit 集成测试全部通过。
+- `swift test`：16 个核心测试与 11 个 AppKit 集成 / 布局测试全部通过。
 - 截图交互测试覆盖桌面 / 全屏 / 重叠窗口命中、点击抖动与拖动阈值、鼠标松开后确认、窄选区拒绝、负坐标显示器、确认后冻结、旧快捷键偏好兼容、原位编辑布局与隔离剪贴板 PNG 导出。
-- `./scripts/build-app.sh release`：构建通过，生成约 1.8 MB 的 arm64 `dist/Suse.app`。
-- `codesign --verify --deep --strict dist/Suse.app`：使用 `Suse Local Development` 证书的应用包签名验证通过。
+- `./scripts/build-app.sh release`：构建通过，生成 arm64 `dist/superuse.app`。
+- `codesign --verify --deep --strict dist/superuse.app`：使用 `Suse Local Development` 证书的应用包签名验证通过。
 - 修改临时应用副本的版本号并用同一证书重新签名：CDHash 变化，designated requirement 保持一致，且新副本通过原 requirement 验证。签名身份绑定 Bundle ID 与证书，不依赖构建内容哈希。
 - 在无本机签名配置的临时目录执行打包脚本：缺少签名身份或显式指定 `SIGNING_IDENTITY=-` 均在构建前失败，不会退回临时签名。
-- `plutil -lint dist/Suse.app/Contents/Info.plist`、`git diff --check`：通过。
+- `plutil -lint dist/superuse.app/Contents/Info.plist`、`git diff --check`：通过。
+- 布局测试覆盖亮色、暗色、高对比度亮色 / 暗色，在较小窗口尺寸检查设置页宽度、分组边界、剪贴板列表高度和截图工具栏边界。测试只覆盖窗口的 appearance，不修改系统外观设置。
+- 更名后 `CFBundleName`、`CFBundleDisplayName`、可执行文件和应用包名均为 `superuse`；Bundle ID 仍为 `app.suse.mac`，签名 requirement 仍绑定原证书 `<LOCAL_CERTIFICATE_SHA1>`。
 - 没有 SwiftUI import，没有第三方包依赖。
 
 AppKit 集成测试使用专用 NSPasteboard、临时 UserDefaults suite 和临时目录，检查实际读写和图片像素。不会使用系统剪贴板作为测试数据源。
 
-本次通过 `dist/Suse.app` 实机进入了截图覆盖层，未修改系统隐私设置或替换 `/Applications/Suse.app`。首次从 ad-hoc 签名切换到证书时仍需要重新授权。
+此前已通过 `dist/Suse.app` 实机进入截图覆盖层。本次界面重构与更名使用 `dist/superuse.app` 验证，未修改系统隐私设置或替换 `/Applications/Suse.app`。
 
 ## 原生界面
 
-已检查工具箱中只保留一个截图入口，实机触发后能显示冻结画面和自动窗口选框。使用生成的测试图片渲染并检查了原位预览 / 编辑操作栏，图片位置保持不变。实机后续操作遇到界面控制工具的窗口状态变化提示，未完成完整的快捷键、滚动和全屏 Space 验收。下面保留手工验收清单，不能以单元测试或离屏渲染代替这些检查。
+实机检查了原生工具箱、通用设置、统一快捷键页和剪贴板面板：分组背景清晰，控件对齐；剪贴板唤起后工具栏搜索框获得焦点，列表保持紧凑。更名后确认主窗口、设置窗口和菜单栏显示 superuse，截图默认快捷键仍为 ⇧⌘A。未修改或删除用户的剪贴板条目。
 
-1. 启动 `dist/Suse.app`，确认菜单栏入口可用，关闭窗口后快捷键仍可唤起。
+使用测试图片和隔离历史记录，渲染检查了设置、工具箱、剪贴板及原位预览 / 编辑操作栏的四种外观，图片位置保持不变。离屏 `cacheDisplay` 无法完整呈现窗口服务器合成的玻璃材质和 vibrant 选中态，不能用它代替实机材质检查。可重新生成布局预览：
+
+```sh
+SUSE_UI_PREVIEW_DIRECTORY="$PWD/.build/ui-previews" swift test --filter InterfaceLayoutTests
+```
+
+实机后续操作多次遇到界面控制工具的窗口状态变化提示；完整的快捷键、滚动截图、全屏 Space、减少透明度 / 动态效果与 VoiceOver 验收仍保留在下方清单。此前已确认截图入口能显示冻结画面和自动窗口选框。
+
+1. 启动 `dist/superuse.app`，确认菜单栏入口可用，关闭窗口后快捷键仍可唤起。
 2. 在快捷键页录入组合、取消录入、停用一项；尝试给两个命令设置同一组合，应显示冲突且保留原设置。
 3. 在文本编辑器复制两段不同文字和一张图片，按需允许 macOS 的剪贴板读取提示；打开历史搜索，用 ↑↓ / Return 复制，⌘E 编辑，再次打开确认内容更新。将系统访问设为拒绝时面板应显示权限状态。
 4. 将焦点放在文本编辑器输入框，用 ⌃⌥V → ↓ → ⌘Return，确认内容输入原位置。拒绝辅助功能权限时应只复制并提示，不向其他应用发送按键。

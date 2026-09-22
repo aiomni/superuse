@@ -12,7 +12,7 @@ final class PasteService {
             // The SDK exports this immutable key as a mutable C global; use its documented value.
             let options = ["AXTrustedCheckOptionPrompt": true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
-            throw AppError("内容已复制。开启 Suse 的辅助功能权限后，即可直接粘贴到原来的输入框。")
+            throw AppError("内容已复制。开启 \(AppIdentity.name) 的辅助功能权限后，即可直接粘贴到原来的输入框。")
         }
         application.activate()
         // Restore focus, then wait for the shortcut modifiers to be released.

@@ -41,7 +41,7 @@ final class ScrollCaptureSession {
             task = Task { [weak self] in
                 guard let self else { return }
                 do {
-                    // Refresh after creating the HUD, so even a previously hidden Suse is in the
+                    // Refresh after creating the HUD, so even a previously hidden app is in the
                     // application exclusion list. Otherwise its new controls could enter a frame.
                     content = try await capture.content()
                     try Task.checkCancellation()
@@ -56,25 +56,26 @@ final class ScrollCaptureSession {
     }
 
     private func showControls() {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 145),
-                            styleMask: [.titled, .nonactivatingPanel, .fullSizeContentView], backing: .buffered, defer: false)
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
+        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 124),
+                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.backgroundColor = .clear
+        panel.isOpaque = false
+        panel.hasShadow = true
         panel.level = .screenSaver
         panel.isFloatingPanel = true
         panel.becomesKeyOnlyIfNeeded = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isMovableByWindowBackground = true
-        let pause = ActionButton("暂停") { [weak self] in self?.togglePause() }
+        let pause = ActionButton("暂停", symbol: "pause", style: .toolbar) { [weak self] in self?.togglePause() }
         pauseButton = pause
         let controls = UI.stack([
-            UI.label("缓慢向下滚动，停稳后自动拼接", size: 16, weight: .semibold), status,
+            UI.label("缓慢向下滚动，停稳后自动拼接", size: 14, weight: .medium), status,
             UI.stack([pause,
-                      ActionButton("取消") { [weak self] in self?.cancel() },
-                      ActionButton("完成截图", symbol: "checkmark") { [weak self] in self?.finish() }], axis: .horizontal),
-        ], spacing: 12)
-        panel.contentView = UI.glass(controls, inset: 18)
+                      ActionButton("取消", style: .toolbar) { [weak self] in self?.cancel() },
+                      ActionButton("完成截图", symbol: "checkmark", style: .toolbar) { [weak self] in self?.finish() }], axis: .horizontal),
+        ], spacing: 8)
+        panel.contentView = UI.glassBar(controls, radius: 20, inset: 16)
         if let screen = NSScreen.screens.first(where: {
             ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID
         }) ?? NSScreen.main {

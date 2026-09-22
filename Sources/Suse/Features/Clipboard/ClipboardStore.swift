@@ -44,8 +44,8 @@ final class ClipboardStore {
 
     var accessNotice: String? {
         switch pasteboard.accessBehavior {
-        case .alwaysDeny: "系统已阻止读取剪贴板，请在系统隐私设置中允许 Suse。"
-        case .ask, .default: "自动记录需允许读取剪贴板；可在系统隐私设置中为 Suse 设为始终允许。"
+        case .alwaysDeny: "系统已阻止读取剪贴板，请在系统隐私设置中允许 \(AppIdentity.name)。"
+        case .ask, .default: "自动记录需允许读取剪贴板；可在系统隐私设置中为 \(AppIdentity.name) 设为始终允许。"
         case .alwaysAllow: nil
         @unknown default: nil
         }

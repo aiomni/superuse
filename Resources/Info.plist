@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-    <key>CFBundleName</key><string>Suse</string>
-    <key>CFBundleDisplayName</key><string>Suse</string>
+    <key>CFBundleName</key><string>superuse</string>
+    <key>CFBundleDisplayName</key><string>superuse</string>
     <key>CFBundleIdentifier</key><string>app.suse.mac</string>
-    <key>CFBundleExecutable</key><string>Suse</string>
-    <key>CFBundleIconFile</key><string>Suse</string>
+    <key>CFBundleExecutable</key><string>superuse</string>
+    <key>CFBundleIconFile</key><string>superuse</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>0.1.0</string>
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>26.0</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
-    <key>NSScreenCaptureUsageDescription</key><string>Suse 仅在你发起截图时读取屏幕，用于截图和滚动拼接。</string>
+    <key>NSScreenCaptureUsageDescription</key><string>superuse 仅在你发起截图时读取屏幕，用于截图和滚动拼接。</string>
     <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>

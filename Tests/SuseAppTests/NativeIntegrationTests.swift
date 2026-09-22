@@ -93,15 +93,17 @@ struct NativeIntegrationTests {
         let editor = CaptureReviewController(image: colorFixture(), selectionRect: CGRect(x: 100, y: 100, width: 240, height: 160),
                                              displaySize: CGSize(width: 1200, height: 800), allowsScrolling: true)
         editor.view.layoutSubtreeIfNeeded()
-        #expect(editor.view.subviews.contains { $0 is NSGlassEffectView })
+        #expect(editor.view.subviews.contains { $0 is NSGlassEffectContainerView })
         let (store, settings, pasteboard, _, suite) = isolatedStore()
         defer { settings.defaults.removePersistentDomain(forName: suite); pasteboard.releaseGlobally() }
         let panel = ClipboardPanelController(store: store)
         panel.window?.contentView?.layoutSubtreeIfNeeded()
-        #expect(panel.window?.contentView is NSGlassEffectView)
-        let glass = try #require(panel.window?.contentView as? NSGlassEffectView)
-        let content = try #require(glass.contentView)
-        #expect(content.fittingSize.height <= glass.bounds.height)
+        let content = try #require(panel.window?.contentView)
+        #expect(!(content is NSGlassEffectView))
+        #expect(panel.window?.toolbar?.items.contains { $0 is NSSearchToolbarItem } == true)
+        let table = try #require(descendants(of: content).first { $0 is NSTableView })
+        #expect(!hasGlassAncestor(table))
+        #expect(table.enclosingScrollView!.frame.height >= 220)
     }
 
     @Test func screenshotHasOneCommandAndPreservesThePreviousShortcutPreference() throws {
@@ -132,7 +134,7 @@ struct NativeIntegrationTests {
             let canvas = try #require(scroll.documentView as? AnnotationCanvas)
             #expect(scroll.frame == rect)
             #expect(!canvas.editingEnabled)
-            let glass = try #require(view.subviews.first { $0 is NSGlassEffectView })
+            let glass = try #require(view.subviews.first { $0 is NSGlassEffectContainerView })
             #expect(view.bounds.contains(glass.frame))
             let buttons = descendants(of: view).compactMap { $0 as? NSButton }
             let edit = try #require(buttons.first { $0.title == "编辑" })
@@ -201,6 +203,15 @@ struct NativeIntegrationTests {
 
     private func descendants(of view: NSView) -> [NSView] {
         view.subviews.flatMap { [$0] + descendants(of: $0) }
+    }
+
+    private func hasGlassAncestor(_ view: NSView) -> Bool {
+        var ancestor = view.superview
+        while let current = ancestor {
+            if current is NSGlassEffectView { return true }
+            ancestor = current.superview
+        }
+        return false
     }
 
     private func colorFixture() -> CGImage {

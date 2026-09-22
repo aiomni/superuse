@@ -7,7 +7,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     private lazy var hub = ShortcutHub(settings: settings)
     private var features: [any FeatureModule] = []
     private var statusItem: NSStatusItem?
-    private var dashboard: NSWindow?
+    private var dashboard: DashboardWindowController?
     private var settingsWindow: SettingsWindowController?
     private var menuActions: [() -> Void] = []
 
@@ -20,7 +20,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         features.forEach { $0.start() }
         buildApplicationMenu()
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem?.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: "Suse")
+        statusItem?.button?.image = NSImage(systemSymbolName: "square.stack.3d.up", accessibilityDescription: AppIdentity.name)
         buildStatusMenu()
         showDashboard()
     }
@@ -55,7 +55,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",").target = self
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "退出 Suse", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appMenu.addItem(withTitle: "退出 \(AppIdentity.name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         app.submenu = appMenu
         menu.addItem(app)
         let file = NSMenuItem()
@@ -97,7 +97,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
         }
         menu.addItem(.separator())
         menu.addItem(withTitle: "设置…", action: #selector(showSettings), keyEquivalent: ",").target = self
-        menu.addItem(withTitle: "退出 Suse", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: "退出 \(AppIdentity.name)", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         statusItem?.menu = menu
     }
 
@@ -110,44 +110,8 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
 
     private func showDashboard() {
         if dashboard == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 650, height: 510),
-                                  styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-            window.title = "Suse"
-            window.titlebarAppearsTransparent = true
-            window.isReleasedWhenClosed = false
-            let background = NSVisualEffectView()
-            background.material = .underWindowBackground
-            background.blendingMode = .behindWindow
-            var views: [NSView] = [UI.label("Suse", size: 32, weight: .bold),
-                                   UI.label("轻一点，顺手一点。", size: 15, color: .secondaryLabelColor)]
-            for feature in features {
-                let actions = feature.commands.map { command in
-                    ActionButton(command.title, symbol: command.symbol) { [weak window] in
-                        window?.orderOut(nil)
-                        command.perform()
-                    }
-                }
-                views.append(UI.glass(UI.stack([
-                    UI.label(feature.title, size: 18, weight: .semibold),
-                    UI.label(feature.summary, color: .secondaryLabelColor),
-                    UI.stack(actions, axis: .horizontal, spacing: 8),
-                ])))
-            }
-            views.append(UI.stack([
-                UI.label("常驻菜单栏 · ⌃⌥Space 随时打开", size: 12, color: .secondaryLabelColor),
-                ActionButton("设置", symbol: "gearshape") { [weak self] in self?.showSettings() },
-            ], axis: .horizontal, spacing: 24))
-            let stack = UI.stack(views, spacing: 20)
-            background.addSubview(stack)
-            UI.pin(stack, to: background, inset: 32)
-            for view in views where view is NSGlassEffectView {
-                view.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
-            }
-            window.contentView = background
-            window.center()
-            dashboard = window
+            dashboard = DashboardWindowController(features: features, hub: hub) { [weak self] in self?.showSettings() }
         }
-        dashboard?.makeKeyAndOrderFront(nil)
-        NSApp.activate()
+        dashboard?.show()
     }
 }

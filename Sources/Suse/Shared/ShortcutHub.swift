@@ -33,7 +33,7 @@ final class ShortcutHub {
             return noErr
         }, 1, &event, context, &eventHandler)
         guard installResult == noErr else {
-            for command in commands { errors[command.id] = "快捷键事件监听失败（\(installResult)），请重新启动 Suse。" }
+            for command in commands { errors[command.id] = "快捷键事件监听失败（\(installResult)），请重新启动 \(AppIdentity.name)。" }
             return
         }
         for (index, command) in commands.enumerated() {

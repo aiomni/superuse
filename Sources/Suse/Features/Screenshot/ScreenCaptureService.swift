@@ -20,7 +20,7 @@ struct ScreenSnapshot {
 final class ScreenCaptureService {
     func content() async throws -> SCShareableContent {
         guard CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess() else {
-            throw AppError("请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许 Suse，然后重试截图。")
+            throw AppError("请在系统设置 → 隐私与安全性 → 屏幕与系统音频录制中允许 \(AppIdentity.name)，然后重试截图。")
         }
         return try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
     }

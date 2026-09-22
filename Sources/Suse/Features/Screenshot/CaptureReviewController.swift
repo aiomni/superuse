@@ -73,31 +73,32 @@ final class CaptureReviewController: NSViewController {
     }
 
     private func buildToolbar() {
-        let edit = ActionButton("编辑", symbol: "pencil.tip") { [weak self] in self?.toggleEditing() }
+        let edit = ActionButton("编辑", symbol: "pencil.tip", style: .toolbar) { [weak self] in self?.toggleEditing() }
         editButton = edit
-        let scrolling = ActionButton("滚动截图", symbol: "scroll") { [weak self] in self?.onAction?(.scroll) }
+        let scrolling = ActionButton("滚动截图", symbol: "scroll", style: .toolbar) { [weak self] in self?.onAction?(.scroll) }
         scrolling.isHidden = !allowsScrolling
         scrollButton = scrolling
-        let copy = ActionButton("复制并完成", symbol: "checkmark") { [weak self] in self?.copyImage(completing: true) }
+        let copy = ActionButton("复制并完成", symbol: "checkmark", style: .glass) { [weak self] in self?.copyImage(completing: true) }
         copy.keyEquivalent = "\r"
         copy.keyEquivalentModifierMask = []
-        let save = ActionButton("保存…", symbol: "square.and.arrow.down") { [weak self] in self?.saveImage() }
+        let save = ActionButton("保存…", symbol: "square.and.arrow.down", style: .toolbar) { [weak self] in self?.saveImage() }
         save.keyEquivalent = "s"
         save.keyEquivalentModifierMask = [.command]
         let actions = UI.stack([
             scrolling, edit,
-            ActionButton("重选", symbol: "crop") { [weak self] in self?.onAction?(.reselect) },
+            ActionButton("重选", symbol: "crop", style: .toolbar) { [weak self] in self?.onAction?(.reselect) },
             save,
-            ActionButton("取消") { [weak self] in self?.onAction?(.done) },
-            copy,
+            ActionButton(icon: "取消", symbol: "xmark") { [weak self] in self?.onAction?(.done) },
         ], axis: .horizontal, spacing: 8)
-        let palette = makePalette()
+        let palette = UI.glassBar(makePalette())
         palette.isHidden = true
         self.palette = palette
-        let content = UI.stack([palette, actions, status], spacing: 8)
-        let glass = UI.glass(content, radius: 16, inset: 12)
-        view.addSubview(glass)
-        toolbar = glass
+        let mainBar = UI.glassBar(UI.stack([actions, status], spacing: 5))
+        let content = UI.stack([palette, UI.stack([mainBar, copy], axis: .horizontal, spacing: 10)], spacing: 8)
+        content.alignment = .trailing
+        let container = UI.glassContainer(content)
+        view.addSubview(container)
+        toolbar = container
         positionToolbar()
     }
 
@@ -124,9 +125,9 @@ final class CaptureReviewController: NSViewController {
         widths.selectedSegment = 1
         return UI.stack([
             toolPicker, colorWell, widths,
-            ActionButton("撤销", symbol: "arrow.uturn.backward") { [weak self] in self?.canvas.undoManager?.undo() },
-            ActionButton("重做", symbol: "arrow.uturn.forward") { [weak self] in self?.canvas.undoManager?.redo() },
-            ActionButton("清除") { [weak self] in self?.canvas.clear() },
+            ActionButton(icon: "撤销", symbol: "arrow.uturn.backward") { [weak self] in self?.canvas.undoManager?.undo() },
+            ActionButton(icon: "重做", symbol: "arrow.uturn.forward") { [weak self] in self?.canvas.undoManager?.redo() },
+            ActionButton(icon: "清除标注", symbol: "trash") { [weak self] in self?.canvas.clear() },
         ], axis: .horizontal, spacing: 8)
     }
 
@@ -151,6 +152,7 @@ final class CaptureReviewController: NSViewController {
         canvas.editingEnabled.toggle()
         palette?.isHidden = !canvas.editingEnabled
         editButton?.title = canvas.editingEnabled ? "完成标注" : "编辑"
+        editButton?.setAccessibilityLabel(editButton?.title)
         canvas.window?.invalidateCursorRects(for: canvas)
         view.window?.makeFirstResponder(canvas.editingEnabled ? canvas : view)
         updateStatus()
@@ -165,7 +167,7 @@ final class CaptureReviewController: NSViewController {
     @objc private func widthChanged(_ sender: NSSegmentedControl) { canvas.lineWidth = [2, 5, 10][sender.selectedSegment] }
 
     private func updateStatus() {
-        let hint = canvas.editingEnabled ? "\(canvas.annotationCount) 处标注 · ⇧⌘C 复制 · ⌘S 保存" : "画面已定格 · Enter 复制完成 · ⌘S 保存"
+        let hint = canvas.editingEnabled ? "\(canvas.annotationCount) 处标注 · ⇧⌘C 复制" : "Enter 完成 · ⌘S 保存"
         status.stringValue = "\(canvas.image.width) × \(canvas.image.height) px · \(hint)"
         scrollButton?.isEnabled = !canvas.editingEnabled && canvas.annotationCount == 0
         scrollButton?.toolTip = canvas.annotationCount > 0 ? "清除标注后可进入滚动截图" : "进入后在选区内缓慢向下滚动"
@@ -198,7 +200,7 @@ final class CaptureReviewController: NSViewController {
         guard let window = view.window else { return }
         let save = NSSavePanel()
         save.allowedContentTypes = [.png]
-        save.nameFieldStringValue = "Suse-\(Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false)).replacingOccurrences(of: ":", with: "-")).png"
+        save.nameFieldStringValue = "\(AppIdentity.name)-\(Date().formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false)).replacingOccurrences(of: ":", with: "-")).png"
         save.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = save.url, let self else { return }
             do {

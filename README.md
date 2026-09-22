@@ -1,4 +1,4 @@
-# Suse
+# superuse
 
 一个轻量的 macOS 菜单栏工具箱。使用 **AppKit + 原生 Liquid Glass**，不使用 SwiftUI，无第三方依赖。当前支持截图和剪贴板历史，功能模块彼此独立，共用设置面板和快捷键中枢。
 
@@ -12,10 +12,10 @@
 cp .signing-identity.example .signing-identity.local
 # 将 .signing-identity.local 的内容改为本机代码签名证书的 SHA-1 或名称。
 ./scripts/build-app.sh release
-open dist/Suse.app
+open dist/superuse.app
 ```
 
-也可以在 Xcode 中打开 `Package.swift` 编辑和调试。涉及权限时，请通过打包后的 `Suse.app` 运行，以便系统识别应用身份。关闭工具箱后应用继续在菜单栏运行；在菜单中选择“退出 Suse”结束应用。
+也可以在 Xcode 中打开 `Package.swift` 编辑和调试。涉及权限时，请通过打包后的 `superuse.app` 运行，以便系统识别应用身份。关闭工具箱后应用继续在菜单栏运行；在菜单中选择“退出 superuse”结束应用。
 
 打包使用固定的代码签名证书，优先读取环境变量 `SIGNING_IDENTITY`，其次读取 `.signing-identity.local`。建议填写证书的 SHA-1，避免同名证书混淆；本机配置不提交 Git。可通过 `security find-identity -p codesigning` 查看本机身份。配置缺失、证书不可用或显式指定 `-` 时构建会失败，不会退回 ad-hoc 临时签名。
 
@@ -25,7 +25,13 @@ open dist/Suse.app
 SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build-app.sh release
 ```
 
-首次从临时签名切换到固定证书后，需要退出应用，用 `dist/Suse.app` 替换 `/Applications/Suse.app`，在系统录屏权限列表中移除旧 Suse，再重新添加 `/Applications/Suse.app` 并授权。之后保持签名证书、Bundle ID 和安装路径一致。不要删除并重建同名证书；同名不代表同一身份。保存好对应私钥，证书到期或更换后可能需要重新授权。分发给其他 Mac 前使用 Developer ID Application 签名和公证。
+首次从临时签名切换到固定证书后，需要退出应用，用 `dist/superuse.app` 替换 `/Applications/superuse.app`，在系统录屏权限列表中移除旧 Suse，再重新添加 `/Applications/superuse.app` 并授权。之后保持签名证书、Bundle ID 和安装路径一致。不要删除并重建同名证书；同名不代表同一身份。保存好对应私钥，证书到期或更换后可能需要重新授权。分发给其他 Mac 前使用 Developer ID Application 签名和公证。
+
+## 原生界面
+
+设置窗口采用 macOS 原生侧栏、浅色分组、细分隔线和右对齐开关。工具箱使用原生工具栏；剪贴板采用紧凑列表和工具栏搜索。Liquid Glass 用于按钮、截图操作栏等控制区域，文字、列表和编辑内容保持清晰背景，跟随系统外观和对比度。
+
+应用已从 Suse 更名为 **superuse**。构建产物和菜单使用新名称；Bundle ID `app.suse.mac`、设置键、历史数据目录以及 `Suse Local Development` 签名证书保持不变，以兼容旧版数据与授权身份。内部 Swift 模块名仍为 `Suse` / `SuseCore`。
 
 ## 默认快捷键
 
@@ -49,7 +55,7 @@ SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build-app.sh 
 
 滚动拼接在独立 actor 中运行，只保存新增图像条带。最多 30,000 px 高、48 MP；到达限制后可导出已接受的部分。重复图案、动画、滚动过快、反向滚动或重叠不足时可能无法匹配，会保留已拼接内容并提示回退重试。它不控制目标应用自动滚动。
 
-首次截图会请求系统屏幕录制权限。若拒绝，在“设置 → 通用”打开对应系统权限页后启用 Suse；必要时退出并重新运行。
+首次截图会请求系统屏幕录制权限。若拒绝，在“设置 → 通用”打开对应系统权限页后启用 superuse；必要时退出并重新运行。
 
 ## 剪贴板
 
@@ -66,7 +72,7 @@ SIGNING_IDENTITY='Apple Development: Your Name (TEAMID)' ./scripts/build-app.sh 
 
 直接粘贴需要“辅助功能”权限和仍然可恢复的目标应用焦点。没有权限时内容仍会复制，可手动 ⌘V。图片可重新复制和粘贴；文字可编辑。富文本格式及多文件附件暂不保留。
 
-macOS 还会单独控制剪贴板读取权限。首次自动记录可能显示系统询问；在系统设置的隐私与安全性中允许 Suse 读取其他应用的剪贴板，设为“始终允许”可避免每次复制时询问。应用会显示读取被阻止的状态，不会绕过系统权限。
+macOS 还会单独控制剪贴板读取权限。首次自动记录可能显示系统询问；在系统设置的隐私与安全性中允许 superuse 读取其他应用的剪贴板，设为“始终允许”可避免每次复制时询问。应用会显示读取被阻止的状态，不会绕过系统权限。
 
 默认仅使用内存，最多 100 条，可设为 50 / 100 / 200 条。单条最多 8 MB，总计最多 32 MB；去重后将新记录放到顶部，超限移除最旧记录。设置中支持暂停采集、排除应用 Bundle ID、清空历史及可选磁盘持久化。
 
@@ -78,7 +84,7 @@ macOS 还会单独控制剪贴板读取权限。首次自动记录可能显示�
 swift test
 ```
 
-自动测试覆盖：历史去重 / 容量 / 编辑 / 序列化、真实的隔离 NSPasteboard 读写、敏感标记、持久化删除、标注导出方向和撤销、自动窗口 / 全屏命中、点击与拖动区分、确认后锁定选区、原位编辑和操作栏边界、多屏坐标换算、逐像素滚动拼接、静止和运动帧、歧义与容量上限。测试使用专用剪贴板和临时目录，不读写你的系统剪贴板历史。
+自动测试覆盖：历史去重 / 容量 / 编辑 / 序列化、真实的隔离 NSPasteboard 读写、敏感标记、持久化删除、标注导出方向和撤销、自动窗口 / 全屏命中、点击与拖动区分、确认后锁定选区、原位编辑和操作栏边界、多屏坐标换算、逐像素滚动拼接、静止和运动帧、歧义与容量上限。同时检查亮色、暗色和高对比度下的原生窗口布局、紧凑列表和截图操作栏边界。测试使用专用剪贴板和临时目录，不读写你的系统剪贴板历史。
 
 ```text
 Sources/

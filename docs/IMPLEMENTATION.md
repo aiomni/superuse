@@ -1,6 +1,6 @@
 # 实现路径
 
-Suse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**；UIKit 属于 iOS / Mac Catalyst。本项目不使用 SwiftUI，以 NSGlassEffectView、NSWindow、NSTableView、NSTextView 等原生组件实现。
+superuse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**；UIKit 属于 iOS / Mac Catalyst。本项目不使用 SwiftUI，以 NSGlassEffectView、NSWindow、NSTableView、NSTextView 等原生组件实现。
 
 ## Tracer Bullets
 
@@ -24,3 +24,18 @@ Suse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**；U
 - `CaptureSelectionState` 只处理坐标命中、点击 / 拖动和确认状态；`SelectionController` 管理冻结的屏幕覆盖层；`CaptureReviewController` 管理原位标注和导出；`ScreenshotModule` 串联选择、预览与滚动会话。
 
 只在存在实际变化点时引入协议；避免仓储、工厂等无需求的抽象。状态在主线程管理，CPU 密集处理移出 UI 线程。
+
+## 原生界面边界
+
+- 设置使用 `NSSplitViewController` 的原生 sidebar item 和 `NSTableView.sourceList`。详情页可滚动，`NSBox` 分组配合系统语义颜色，开关使用 `NSSwitch`。
+- 工具箱和剪贴板使用 `NSToolbar`；剪贴板搜索使用 `NSSearchToolbarItem`，唤起面板后直接聚焦搜索。
+- `UI.section` 负责内容分组；`UI.glassBar` 只承载浮动操作；相邻玻璃控件置于同一个 `NSGlassEffectContainerView`。列表、图片画布和文本编辑器不叠加玻璃背景。
+- 按钮使用 AppKit 原生 bezel style；图标按钮提供 tooltip 和无障碍名称。macOS 27 使用 `effectIsInteractive`，macOS 26 继续使用原生常规玻璃。
+- 界面中的应用名由 `AppIdentity` 读取 bundle display name。更名为 superuse 时保留旧 Bundle ID、偏好键与历史路径，不触发数据迁移；打包继续使用原有固定签名证书。
+
+遵循 Liquid Glass 的导航 / 内容分层，以 AppKit 实现，不引入 SwiftUI。API 以当前 Apple 文档和 SDK 为准：
+
+- [Adopting Liquid Glass](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass)
+- [NSGlassEffectView](https://developer.apple.com/documentation/appkit/nsglasseffectview)
+- [NSGlassEffectContainerView](https://developer.apple.com/documentation/appkit/nsglasseffectcontainerview)
+- [NSButton.BezelStyle.glass](https://developer.apple.com/documentation/appkit/nsbutton/bezelstyle-swift.enum/glass)
