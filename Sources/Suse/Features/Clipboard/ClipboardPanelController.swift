@@ -27,7 +27,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
 
     init(store: ClipboardStore) {
         self.store = store
-        let panel = HistoryPanel(contentRect: NSRect(x: 0, y: 0, width: 650, height: 520),
+        let panel = HistoryPanel(contentRect: NSRect(x: 0, y: 0, width: 620, height: 490),
                                  styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
         panel.title = "剪贴板历史"
         panel.titleVisibility = .hidden
@@ -66,12 +66,12 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         search.placeholderString = "搜索历史内容"
         search.delegate = self
         search.sendsSearchStringImmediately = true
-        search.controlSize = .large
+        search.controlSize = .regular
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("content"))
         table.addTableColumn(column)
         table.headerView = nil
-        table.rowHeight = 66
-        table.intercellSpacing = NSSize(width: 0, height: 5)
+        table.rowHeight = 58
+        table.intercellSpacing = NSSize(width: 0, height: 3)
         table.style = .inset
         table.backgroundColor = .clear
         table.dataSource = self
@@ -100,12 +100,12 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
             ActionButton("编辑", symbol: "pencil") { [weak self] in self?.editSelected() },
         ], axis: .horizontal, spacing: 8)
         let content = UI.stack([
-            UI.label("剪贴板", size: 22, weight: .semibold), search, list, actions, status,
-        ], spacing: 12)
+            UI.label("剪贴板", size: 20, weight: .semibold), search, list, actions, status,
+        ], spacing: 10)
         for view in [search, list] {
             view.widthAnchor.constraint(equalTo: content.widthAnchor).isActive = true
         }
-        window?.contentView = UI.glass(content, radius: 20, inset: 24)
+        window?.contentView = UI.glass(content, radius: 20, inset: 20)
     }
 
     private var selectedEntry: ClipboardEntry? {
@@ -138,13 +138,13 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         let icon = NSImageView(image: image)
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.contentTintColor = .secondaryLabelColor
-        icon.widthAnchor.constraint(equalToConstant: 38).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 38).isActive = true
+        icon.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 32).isActive = true
         let title = UI.label(entry.title.isEmpty ? "空白文本" : entry.title, size: 13, weight: .medium)
         title.maximumNumberOfLines = 2
         title.lineBreakMode = .byTruncatingTail
         let subtitle = UI.label("\(entry.source) · \(entry.capturedAt.formatted(date: .omitted, time: .shortened))", size: 11, color: .secondaryLabelColor)
-        let rowView = UI.stack([icon, UI.stack([title, subtitle], spacing: 5)], axis: .horizontal)
+        let rowView = UI.stack([icon, UI.stack([title, subtitle], spacing: 3)], axis: .horizontal, spacing: 10)
         rowView.setAccessibilityLabel("\(entry.title)，来自 \(entry.source)")
         return rowView
     }
