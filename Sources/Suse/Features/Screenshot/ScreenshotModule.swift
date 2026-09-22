@@ -12,16 +12,18 @@ final class ScreenshotModule: FeatureModule {
     private let capture = ScreenCaptureService()
     private let selector = SelectionController()
     private var captureTask: Task<Void, Never>?
+    private var scrollSession: ScrollCaptureSession?
     private var editors: [UUID: AnnotationWindowController] = [:]
 
-    enum Mode { case fullScreen, region, window }
+    enum Mode { case fullScreen, region, window, scroll }
 
     init(settings: SettingsStore) { self.settings = settings }
 
     var commands: [AppCommand] {
         [command("fullScreen", title: "全屏截图", symbol: "rectangle.inset.filled", key: 18, mode: .fullScreen),
          command("region", title: "区域截图", symbol: "crop", key: 19, mode: .region),
-         command("window", title: "窗口截图", symbol: "macwindow", key: 20, mode: .window)]
+         command("window", title: "窗口截图", symbol: "macwindow", key: 20, mode: .window),
+         command("scroll", title: "滚动截图", symbol: "scroll", key: 21, mode: .scroll)]
     }
 
     private func command(_ id: String, title: String, symbol: String, key: UInt32, mode: Mode) -> AppCommand {
@@ -30,14 +32,16 @@ final class ScreenshotModule: FeatureModule {
     }
 
     func start() { }
-    func stop() { captureTask?.cancel(); selector.cancel() }
+    func stop() { captureTask?.cancel(); selector.cancel(); scrollSession?.cancel() }
 
     private func begin(_ mode: Mode) {
+        if let scrollSession { scrollSession.finish(); return }
         if captureTask != nil { captureTask?.cancel(); selector.cancel(); return }
+        let source = NSWorkspace.shared.frontmostApplication
         // Let a menu click finish dismissing its menu before ScreenCaptureKit samples it.
         captureTask = Task { [weak self] in
             guard let self else { return }
-            defer { captureTask = nil }
+            defer { captureTask = nil; scrollSession = nil }
             do {
                 try await Task.sleep(for: .milliseconds(180))
                 let content = try await capture.content()
@@ -56,11 +60,27 @@ final class ScreenshotModule: FeatureModule {
                         snapshots.append(try await capture.snapshot(display: display, content: content))
                         try Task.checkCancellation()
                     }
+                    guard !snapshots.isEmpty else { throw AppError("未找到可截图的屏幕。") }
                     guard let selection = await selector.select(snapshots: snapshots, windows: capture.orderedWindows(in: content),
-                                                                 mode: mode == .window ? .window : .region) else { return }
+                                                                 mode: mode == .window ? .window : .region,
+                                                                 allowsWindowMode: mode != .scroll) else { return }
                     try Task.checkCancellation()
                     switch selection {
-                    case .region(let rect, let snapshot): image = try snapshot.crop(rect)
+                    case .region(let rect, let snapshot):
+                        let cropped = try snapshot.crop(rect)
+                        if mode == .scroll {
+                            let session = ScrollCaptureSession(capture: capture, region: rect, display: snapshot.display, content: content)
+                            scrollSession = session
+                            let target: NSRunningApplication?
+                            if source?.processIdentifier != ProcessInfo.processInfo.processIdentifier { target = source }
+                            else {
+                                let center = CGPoint(x: rect.midX, y: rect.midY)
+                                let owner = capture.orderedWindows(in: content).first { $0.frame.contains(center) }?.owningApplication
+                                target = owner.flatMap { NSRunningApplication(processIdentifier: $0.processID) }
+                            }
+                            guard let stitched = await session.run(initialImage: cropped, source: target) else { return }
+                            image = stitched
+                        } else { image = cropped }
                     case .window(let window): image = try await capture.capture(window: window)
                     }
                 }
@@ -90,6 +110,7 @@ final class ScreenshotModule: FeatureModule {
                 UI.label("全屏截图捕获鼠标所在的显示器。区域截图时拖动框选，按空格切换窗口模式，悬停自动识别窗口，点击确认；Esc 取消。每次区域选择位于一块显示器内。", color: .secondaryLabelColor),
             ])),
             UI.label("标注支持画笔、箭头、矩形、椭圆、文字和不透明遮挡，可撤销 / 重做。使用 ⇧⌘C 复制标注结果，⌘S 保存 PNG。", size: 12, color: .secondaryLabelColor),
+            UI.label("滚动截图：框选内容区，避开固定页眉 / 侧栏；缓慢向下滚动，每次保留至少 1/4 重叠，停稳后自动拼接。点击完成或再次按快捷键。上限为 30,000 px 高或 48 MP。", size: 12, color: .secondaryLabelColor),
         ])
     }
 }
