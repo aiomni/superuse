@@ -165,7 +165,7 @@ final class CaptureReviewController: NSViewController {
             let image = NSImage(systemSymbolName: tool.symbol, accessibilityDescription: tool.title)?
                 .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
             toolPicker.setImage(image, forSegment: tool.rawValue)
-            toolPicker.setToolTip(tool.title, forSegment: tool.rawValue)
+            toolPicker.setToolTip(tool.tooltip, forSegment: tool.rawValue)
             toolPicker.setWidth(32, forSegment: tool.rawValue)
         }
         toolPicker.selectedSegment = AnnotationTool.arrow.rawValue
@@ -181,6 +181,7 @@ final class CaptureReviewController: NSViewController {
                                         target: self, action: #selector(widthChanged(_:)))
         widths.segmentStyle = .roundRect
         widths.font = .systemFont(ofSize: 13, weight: .medium)
+        widths.toolTip = "线条粗细；打码时调整马赛克颗粒大小"
         widths.selectedSegment = 1
         let undo = ActionButton(icon: "撤销", symbol: "arrow.uturn.backward", style: .accessoryBar) { [weak self] in self?.canvas.undoManager?.undo() }
         undo.keyEquivalent = "z"
@@ -229,6 +230,7 @@ final class CaptureReviewController: NSViewController {
 
     @objc private func toolChanged() {
         canvas.tool = AnnotationTool(rawValue: toolPicker.selectedSegment) ?? .arrow
+        colorWell.isEnabled = canvas.tool != .mosaic && canvas.tool != .redact
         canvas.window?.invalidateCursorRects(for: canvas)
     }
     @objc private func colorChanged() { canvas.ink = colorWell.color }

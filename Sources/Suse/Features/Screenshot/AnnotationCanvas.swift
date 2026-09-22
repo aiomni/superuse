@@ -1,9 +1,17 @@
 import AppKit
+import SuseCore
 
 enum AnnotationTool: Int, CaseIterable {
-    case pen, arrow, rectangle, ellipse, text, redact
-    var title: String { ["画笔", "箭头", "矩形", "椭圆", "文字", "遮挡"][rawValue] }
-    var symbol: String { ["pencil.tip", "arrow.up.right", "rectangle", "oval", "textformat", "rectangle.fill"][rawValue] }
+    case pen, arrow, rectangle, ellipse, text, redact, mosaic
+    var title: String { ["画笔", "箭头", "矩形", "椭圆", "文字", "遮挡", "打码"][rawValue] }
+    var symbol: String { ["pencil.tip", "arrow.up.right", "rectangle", "oval", "textformat", "rectangle.fill", "checkerboard.rectangle"][rawValue] }
+    var tooltip: String {
+        switch self {
+        case .redact: "遮挡：拖动框选，用不透明黑色覆盖"
+        case .mosaic: "打码：拖动框选马赛克区域，细／中／粗调整颗粒大小"
+        default: title
+        }
+    }
 }
 
 private struct Annotation {
@@ -12,6 +20,7 @@ private struct Annotation {
     let color: NSColor
     let width: CGFloat
     var text = ""
+    var mosaicTiles: CGImage?
 }
 
 @MainActor
@@ -68,14 +77,18 @@ final class AnnotationCanvas: NSView {
     }
 
     private func render(in context: CGContext, includingDraft: Bool) {
-        context.saveGState()
-        context.translateBy(x: 0, y: CGFloat(image.height))
-        context.scaleBy(x: 1, y: -1)
-        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        context.restoreGState()
+        drawBitmap(image, in: context)
         for annotation in annotations + (includingDraft ? draft.map { [$0] } ?? [] : []) {
             draw(annotation, in: context)
         }
+    }
+
+    private func drawBitmap(_ bitmap: CGImage, in context: CGContext) {
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(image.height))
+        context.scaleBy(x: 1, y: -1)
+        context.draw(bitmap, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        context.restoreGState()
     }
 
     private func draw(_ annotation: Annotation, in context: CGContext) {
@@ -110,6 +123,16 @@ final class AnnotationCanvas: NSView {
         case .redact:
             context.setFillColor(NSColor.black.cgColor)
             context.fill(rect.integral)
+        case .mosaic:
+            context.clip(to: rect.integral)
+            // Keep the covered area opaque even if the source contains transparency
+            // or the downsampled bitmap cannot be allocated.
+            context.setFillColor(NSColor.black.cgColor)
+            context.fill(rect.integral)
+            if let tiles = annotation.mosaicTiles {
+                context.interpolationQuality = .none
+                drawBitmap(tiles, in: context)
+            }
         case .text:
             (annotation.text as NSString).draw(at: first, withAttributes: [
                 .font: NSFont.systemFont(ofSize: annotation.width * 5 + 12, weight: .semibold),
@@ -125,11 +148,23 @@ final class AnnotationCanvas: NSView {
                        y: min(max(0, local.y * scale), CGFloat(image.height)))
     }
 
+    private func makeMosaicTiles() -> CGImage? {
+        MosaicFilter.makeTiles(from: image, blockSize: max(8, Int(lineWidth * 4))) { context in
+            // Include earlier edits so another mosaic never restores source pixels
+            // over an existing redaction. Store only this small bitmap with the edit.
+            NSGraphicsContext.saveGraphicsState()
+            defer { NSGraphicsContext.restoreGraphicsState() }
+            NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+            for annotation in annotations { draw(annotation, in: context) }
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         let point = imagePoint(event)
         if tool == .text { requestText?(point); return }
         draft = Annotation(tool: tool, points: [point], color: ink, width: lineWidth)
+        if tool == .mosaic { draft?.mosaicTiles = makeMosaicTiles() }
         needsDisplay = true
     }
 
@@ -143,10 +178,15 @@ final class AnnotationCanvas: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
-        guard let draft else { return }
-        if draft.tool == .pen || draft.points.count > 1 { replaceAnnotations(annotations + [draft]) }
+        guard var completed = draft else { return }
         self.draft = nil
         needsDisplay = true
+        if completed.tool == .mosaic || completed.tool == .redact {
+            let end = imagePoint(event)
+            guard let start = completed.points.first, start.x != end.x, start.y != end.y else { return }
+            completed.points = [start, end]
+        }
+        if completed.tool == .pen || completed.points.count > 1 { replaceAnnotations(annotations + [completed]) }
     }
 
     func addText(_ text: String, at point: CGPoint) {

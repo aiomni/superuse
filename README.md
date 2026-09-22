@@ -11,7 +11,7 @@ A small toolbox in your Mac's menu bar. Capture and annotate screenshots, save l
 ## What you can do
 
 - **Capture a screen, window, or region.** Select a window with a click or drag around exactly what you need.
-- **Annotate before sharing.** Add arrows, shapes, text, freehand marks, and opaque redactions, with undo and redo.
+- **Annotate before sharing.** Add arrows, shapes, text, freehand marks, mosaics, and opaque redactions, with undo and redo.
 - **Capture a long page.** Scroll through the content yourself while superuse combines it into one image.
 - **Find your clipboard history.** Search copied text and images, edit text, and copy or paste an earlier entry.
 - **Make it fit your workflow.** Customize shortcuts, pause clipboard recording, and choose whether to launch at login.
@@ -40,6 +40,8 @@ For building the app from source, see the [development guide](DEV.md).
 4. Press **Return** to copy and finish, **Shift + Command + C** to copy and keep editing, **Command + S** to save, or **Esc** to cancel.
 
 While annotating, use **Command + Z** to undo and **Shift + Command + Z** to redo. **Esc** exits the screenshot even while the canvas or an editing control has focus. In a text-entry or save dialog, the dialog handles its own keyboard shortcuts.
+
+Choose **Mosaic (打码)**, the checkerboard icon, and drag over an area to pixelate it. The fine, medium, and coarse controls set the block size for the next area. **Redact (遮挡)** covers an area with opaque black. Both tools are included in copied and saved images and support undo and redo.
 
 By default, confirming a selection also copies the original screenshot. Turn off automatic copying in screenshot settings if you prefer to edit first.
 

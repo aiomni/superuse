@@ -240,7 +240,7 @@ struct NativeIntegrationTests {
         #expect(scrollRequests == 1)
 
         // Choosing a tool, color, or line width does not change the image.
-        let tools = try #require(views.compactMap { $0 as? NSSegmentedControl }.first { $0.segmentCount == 6 })
+        let tools = try #require(views.compactMap { $0 as? NSSegmentedControl }.first { $0.segmentCount == AnnotationTool.allCases.count })
         tools.selectedSegment = AnnotationTool.rectangle.rawValue
         tools.sendAction(tools.action, to: tools.target)
         let widths = try #require(views.compactMap { $0 as? NSSegmentedControl }.first { $0.segmentCount == 3 })

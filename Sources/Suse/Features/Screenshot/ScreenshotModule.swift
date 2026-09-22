@@ -117,7 +117,7 @@ final class ScreenshotModule: FeatureModule {
             ])),
             UI.section(UI.stack([
                 UI.label("编辑与滚动", size: 14, weight: .semibold),
-                UI.label("标注支持画笔、箭头、矩形、椭圆、文字和不透明遮挡。⌘Z 撤销，⇧⌘Z 重做，Esc 退出截图。Enter 复制并完成，⌘S 保存 PNG。", size: 12, color: .secondaryLabelColor),
+                UI.label("标注支持画笔、箭头、矩形、椭圆、文字、实心遮挡和马赛克打码。选中打码后拖动框选，细／中／粗调整颗粒大小。⌘Z 撤销，⇧⌘Z 重做，Esc 退出截图。Enter 复制并完成，⌘S 保存 PNG。", size: 12, color: .secondaryLabelColor),
                 UI.label("滚动截图时避开固定页眉 / 侧栏，缓慢向下滚动，每次保留至少 1/4 重叠。点击完成或再次按截图快捷键，返回原位预览。", size: 12, color: .secondaryLabelColor),
             ], spacing: 10)),
             UI.label("区域选择位于一块显示器内。长图上限为 30,000 px 高或 48 MP。", size: 11, color: .secondaryLabelColor),
