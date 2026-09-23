@@ -19,6 +19,7 @@ final class SQLiteDatabase {
         let files = FileManager.default
         try files.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
                                   attributes: [.posixPermissions: 0o700])
+        try files.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.deletingLastPathComponent().path)
         if !files.fileExists(atPath: url.path) {
             guard files.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
                 throw ClipboardStorageError(message: "无法创建剪贴板历史文件。")

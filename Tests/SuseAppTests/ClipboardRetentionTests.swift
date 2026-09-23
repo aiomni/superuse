@@ -36,7 +36,8 @@ struct ClipboardRetentionTests {
         #expect(try await store.page().records.map(\.title) == ["pinned second", "pinned first", "latest"])
         fixture.capture("next")
         #expect(try await store.page().records.map(\.title) == ["pinned second", "pinned first", "next"])
-        let reopened = ClipboardStore(settings: fixture.settings, pasteboard: fixture.pasteboard, persistenceURL: fixture.url)
+        let reopened = ClipboardStore(settings: fixture.settings, pasteboard: fixture.pasteboard, persistenceURL: fixture.url,
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         #expect(try await reopened.page().total == 3)
         #expect(reopened.countLimit == 1)
     }
@@ -94,8 +95,35 @@ struct ClipboardRetentionTests {
         fixture.settings.defaults.set(false, forKey: "clipboard.enabled")
         fixture.capture("not recorded")
         #expect(try await fixture.store.page().records.map(\.title) == ["saved"])
-        let reopened = ClipboardStore(settings: settings, pasteboard: fixture.pasteboard, persistenceURL: fixture.url)
+        let reopened = ClipboardStore(settings: settings, pasteboard: fixture.pasteboard, persistenceURL: fixture.url,
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         #expect(try await reopened.page().total == 1)
+    }
+
+    @Test func stoppingAndCancellingReadsStillFlushesAcceptedWrites() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        for text in ["first", "second", "third"] { fixture.capture(text) }
+        fixture.store.start()
+        let read = Task { try await fixture.store.page() }
+        read.cancel()
+        fixture.store.stop()
+        await fixture.store.flush()
+        await #expect(throws: CancellationError.self) { try await read.value }
+        let reopened = ClipboardStore(settings: fixture.settings, pasteboard: fixture.pasteboard, persistenceURL: fixture.url,
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
+        #expect(try await reopened.page().total == 3)
+    }
+
+    @Test func excludedSourcesAreNotRecordedOrWritten() async throws {
+        let fixture = Fixture()
+        defer { fixture.cleanup() }
+        fixture.settings.defaults.set("com.example.fixture", forKey: "clipboard.excludedApps")
+        fixture.capture("excluded")
+        #expect(try await fixture.store.page().total == 0)
+        fixture.settings.defaults.set("", forKey: "clipboard.excludedApps")
+        fixture.capture("allowed")
+        #expect(try await fixture.store.page().records.map(\.title) == ["allowed"])
     }
 
     private func descendants(_ view: NSView) -> [NSView] { view.subviews.flatMap { [$0] + descendants($0) } }
@@ -112,7 +140,8 @@ struct ClipboardRetentionTests {
             _ = NSApplication.shared
             settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
             url = FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite")
-            store = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: url)
+            store = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: url,
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         }
 
         func capture(_ text: String) {

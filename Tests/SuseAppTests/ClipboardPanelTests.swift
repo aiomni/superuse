@@ -17,7 +17,8 @@ struct ClipboardPanelTests {
             pasteboard.releaseGlobally()
             try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
         }
-        let store = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: url)
+        let store = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: url,
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         for text in ["other", "needle"] {
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
@@ -70,7 +71,8 @@ struct ClipboardPanelTests {
             pasteboard.releaseGlobally()
             try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
         }
-        let store = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: url)
+        let store = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: url,
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         pasteboard.clearContents()
         pasteboard.setString("original", forType: .string)
         store.checkForChanges()

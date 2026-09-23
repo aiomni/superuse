@@ -107,6 +107,10 @@ struct ClipboardDiskTests {
         #expect(page.records.allSatisfy { $0.title.utf8.count == 300 })
         let record = try #require(page.records.first)
         #expect(try await disk.content(for: record).content.byteCount == body.utf8.count + 1)
+        try await disk.clear()
+        #expect(try await disk.page().total == 0)
+        let remainingBytes = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? Int.max
+        #expect(remainingBytes < 512 * 1024)
     }
 }
 

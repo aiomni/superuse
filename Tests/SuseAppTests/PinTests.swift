@@ -302,7 +302,8 @@ struct PinTests {
             try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appending(path: suite))
         }
         let store = ClipboardStore(settings: settings, pasteboard: pasteboard,
-                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite"))
+                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite"),
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         pasteboard.clearContents()
         pasteboard.setString("line 1\n    line 2", forType: .string)
         store.checkForChanges()
@@ -341,7 +342,8 @@ struct PinTests {
             try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appending(path: suite))
         }
         let store = ClipboardStore(settings: settings, pasteboard: pasteboard,
-                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite"))
+                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite"),
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         let pins = PinsModule(pasteboard: pasteboard, showsWindows: false)
         defer { pins.stop() }
         let module = ClipboardModule(settings: settings, pins: pins, store: store)

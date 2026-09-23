@@ -12,7 +12,8 @@ struct NativeIntegrationTests {
         let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
         let pasteboard = NSPasteboard.withUniqueName()
         let path = FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite")
-        return (ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: path), settings, pasteboard, path, suite)
+        return (ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: path,
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") }), settings, pasteboard, path, suite)
     }
 
     @Test func clipboardCaptureEditCopyAndSensitiveFiltering() async throws {
@@ -61,7 +62,8 @@ struct NativeIntegrationTests {
         store.checkForChanges()
         await store.flush()
         try #require(store.persistenceError == nil)
-        let reopened = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: path)
+        let reopened = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: path,
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         let saved = try #require(try await reopened.page().records.first)
         #expect(try await reopened.content(for: saved).content == .text("local history"))
         let attributes = try FileManager.default.attributesOfItem(atPath: path.path)

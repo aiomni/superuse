@@ -62,7 +62,8 @@ struct InterfaceLayoutTests {
             try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appending(path: suite))
         }
         let store = ClipboardStore(settings: settings, pasteboard: pasteboard,
-                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite"))
+                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite"),
+            source: { ClipboardSource(name: "Fixture", bundleIdentifier: "com.example.fixture") })
         for text in ["随手记录一个想法", "一个快捷键，自动选择屏幕和窗口。", "原生界面，紧凑布局。",
                      "保留内容的清晰度，让操作控件浮在上方。", "可以用方向键选择历史内容。", "superuse · 截图与剪贴板"] {
             pasteboard.clearContents()
@@ -70,6 +71,7 @@ struct InterfaceLayoutTests {
             store.checkForChanges()
         }
         let pins = PinsModule(pasteboard: pasteboard, showsWindows: false)
+        for record in try await store.page().records.prefix(2) { store.setPinned(record, pinned: true) }
         let controller = ClipboardPanelController(store: store, pins: pins)
         await controller.waitForReload()
         let window = try #require(controller.window)

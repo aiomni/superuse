@@ -26,6 +26,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     private let list: ClipboardListModel
     private var selectedEntry: ClipboardRecord?
     private var reloadTask: Task<Void, Never>?
+    private var needsReload = false
     private var actionTask: Task<Void, Never>?
     private var contextRecord: ClipboardRecord?
     private static let rowDragType = NSPasteboard.PasteboardType("app.suse.clipboard-history-row")
@@ -49,13 +50,14 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         panel.delegate = self
         panel.handleKey = { [weak self] in self?.handleKey($0) ?? false }
         build()
-        store.onChange = { [weak self] in self?.reload() }
+        store.onChange = { [weak self] in self?.historyDidChange() }
         list.onPageLoaded = { [weak self] range in
             guard let self else { return }
             table.reloadData(forRowIndexes: IndexSet(integersIn: range), columnIndexes: IndexSet(integer: 0))
             updateSelection()
         }
         list.onError = { [weak self] in self?.showStorageError($0) }
+        list.onInvalidated = { [weak self] in self?.historyDidChange() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -74,6 +76,13 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
 
     func windowDidResignKey(_ notification: Notification) {
         if window?.attachedSheet == nil { hide() }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        actionTask?.cancel()
+        reloadTask?.cancel()
+        list.cancelRequests()
+        needsReload = true
     }
 
     private func build() {
@@ -165,6 +174,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     }
 
     private func reload() {
+        needsReload = false
         reloadTask?.cancel()
         let query = search.stringValue
         let selectedID = selectedEntry?.id
@@ -188,8 +198,17 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         }
     }
 
-    /// Used by layout and integration checks to await the same asynchronous path as the UI.
-    func waitForReload() async { await store.flush(); await reloadTask?.value }
+    private func historyDidChange() {
+        if window?.isVisible == true { reload() }
+        else { needsReload = true }
+    }
+
+    /// Also prepares an offscreen panel for layout and integration checks.
+    func waitForReload() async {
+        await store.flush()
+        if needsReload { reload() }
+        await reloadTask?.value
+    }
     func waitForAction() async { await actionTask?.value }
 
     private func updateStatus() {
@@ -228,7 +247,6 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
 
     private func hide() {
         actionTask?.cancel()
-        pasteTask?.cancel()
         window?.orderOut(nil)
     }
 
@@ -396,18 +414,22 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         editor.isVerticallyResizable = true
         editor.autoresizingMask = [.width]
         editor.textContainer?.widthTracksTextView = true
+        var saving = false
         let save = ActionButton("保存") { [weak self] in
-            guard let self else { return }
+            guard let self, !saving else { return }
             let text = editor.string
             guard !text.isEmpty else { UI.error(AppError("文本内容不能为空。"), in: sheet); return }
+            saving = true
+            editor.isEditable = false
             Task {
+                defer { saving = false; editor.isEditable = true }
                 if await store.edit(record, text: text) { parent.endSheet(sheet) }
                 else { UI.error(AppError(store.persistenceError ?? "保存失败，请重试。"), in: sheet) }
             }
         }
         save.keyEquivalent = "\r"
         save.keyEquivalentModifierMask = [.command]
-        let cancel = ActionButton("取消") { parent.endSheet(sheet) }
+        let cancel = ActionButton("取消") { if !saving { parent.endSheet(sheet) } }
         cancel.keyEquivalent = "\u{1b}"
         let content = UI.stack([UI.label("编辑文本", size: 18, weight: .semibold), scroll,
                                 UI.stack([cancel, save], axis: .horizontal)], spacing: 16)
