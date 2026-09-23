@@ -65,7 +65,10 @@ final class CaptureLoupeView: NSView {
     }
 
     func follow(_ cursor: CGPoint, in bounds: CGRect) {
-        frame = Self.placement(cursor: cursor, size: frame.size, bounds: bounds)
+        let proposed = Self.placement(cursor: cursor, size: frame.size, bounds: bounds)
+        // Fractional pointer positions must not move the pixel canvas between backing pixels.
+        let aligned = superview?.backingAlignedRect(proposed, options: .alignAllEdgesNearest) ?? proposed
+        setFrameOrigin(aligned.origin)
     }
 
     static func placement(cursor: CGPoint, size: CGSize, bounds: CGRect) -> CGRect {
@@ -88,10 +91,19 @@ private final class CaptureMagnifierView: NSView {
     private let cellSize: CGFloat = 10
     private let pixelCount = 17
     override var isFlipped: Bool { true }
+    override var isOpaque: Bool { true }
 
     init(image: CGImage) {
         self.image = image
         super.init(frame: CGRect(x: 0, y: 0, width: 170, height: 170))
+        wantsLayer = true
+        layerContentsRedrawPolicy = .onSetNeedsDisplay
+        // A fixed shadow separates matching image/background colors without adding a frame.
+        let edgeShadow = NSShadow()
+        edgeShadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        edgeShadow.shadowBlurRadius = 6
+        edgeShadow.shadowOffset = CGSize(width: 0, height: -1)
+        shadow = edgeShadow
         widthAnchor.constraint(equalToConstant: 170).isActive = true
         heightAnchor.constraint(equalToConstant: 170).isActive = true
         setAccessibilityIdentifier("capture-magnifier")
@@ -117,7 +129,7 @@ private final class CaptureMagnifierView: NSView {
         NSColor.black.setFill()
         bounds.fill()
         NSGraphicsContext.current?.imageInterpolation = .none
-        crop?.draw(in: destination, from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
+        crop?.draw(in: destination, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true, hints: nil)
         let center = CGRect(x: CGFloat(pixelCount / 2) * cellSize, y: CGFloat(pixelCount / 2) * cellSize,
                             width: cellSize, height: cellSize)
         NSColor.black.setStroke()

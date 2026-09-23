@@ -163,6 +163,25 @@ struct CaptureLoupeTests {
         }
     }
 
+    @Test func magnifierEdgesStayPixelAlignedWhileFollowingThePointer() throws {
+        let fixture = try makeFixture()
+        defer { fixture.pasteboard.releaseGlobally() }
+        let loupe = try #require(fixture.view.subviews.first { $0 is CaptureLoupeView } as? CaptureLoupeView)
+        let magnifier = try #require(descendants(loupe).first { $0.accessibilityIdentifier() == "capture-magnifier" })
+        for point in [CGPoint(x: 123.125, y: 87.375), CGPoint(x: 124.25, y: 88.75),
+                      CGPoint(x: 1.125, y: 1.375), CGPoint(x: 598.875, y: 398.625)] {
+            fixture.view.mouseMoved(with: try mouse(.mouseMoved, point, fixture))
+            fixture.view.layoutSubtreeIfNeeded()
+            let pixels = fixture.window.convertToBacking(magnifier.convert(magnifier.bounds, to: nil))
+            for edge in [pixels.minX, pixels.minY, pixels.maxX, pixels.maxY] {
+                #expect(abs(edge - edge.rounded()) < 0.001)
+            }
+            #expect(magnifier.bounds.size == CGSize(width: 170, height: 170))
+            #expect(fixture.view.bounds.contains(loupe.frame))
+            #expect(!loupe.frame.contains(point))
+        }
+    }
+
     private struct Fixture {
         let view: SelectionView
         let window: SelectionWindow
