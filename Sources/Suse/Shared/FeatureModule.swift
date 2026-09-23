@@ -25,6 +25,6 @@ struct AppCommand {
     let title: String
     let group: String
     let symbol: String
-    let defaultShortcut: Shortcut
+    let defaultShortcut: Shortcut?
     let perform: () -> Void
 }

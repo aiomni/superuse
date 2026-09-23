@@ -41,6 +41,7 @@ final class ClipboardStore {
     private(set) var history: ClipboardHistory
     private(set) var persistenceError: String?
     var onChange: (() -> Void)?
+    var onExplicitRemoval: ((UUID?) -> Void)?
 
     var accessNotice: String? {
         switch pasteboard.accessBehavior {
@@ -136,8 +137,16 @@ final class ClipboardStore {
         return true
     }
 
-    func remove(_ entry: ClipboardEntry) { history.remove(id: entry.id); changed() }
-    func clear() { history.removeAll(); changed() }
+    func remove(_ entry: ClipboardEntry) {
+        history.remove(id: entry.id)
+        onExplicitRemoval?(entry.id)
+        changed()
+    }
+    func clear() {
+        history.removeAll()
+        onExplicitRemoval?(nil)
+        changed()
+    }
 
     private func changed() {
         onChange?()

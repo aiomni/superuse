@@ -38,7 +38,7 @@ final class DashboardWindowController: NSWindowController, NSToolbarDelegate {
     private func build() {
         let header = UI.stack([
             UI.label("工具箱", size: 24, weight: .semibold),
-            UI.label("截图与剪贴板，一处唤起。", color: .secondaryLabelColor),
+            UI.label("截图、剪贴板与 Pin，一处唤起。", color: .secondaryLabelColor),
         ], spacing: 6)
         var content: [NSView] = [header]
         for feature in features {
@@ -75,6 +75,8 @@ final class DashboardWindowController: NSWindowController, NSToolbarDelegate {
             controls.bottomAnchor.constraint(lessThanOrEqualTo: background.bottomAnchor, constant: -20),
         ])
         window?.contentView = background
+        controls.layoutSubtreeIfNeeded()
+        window?.setContentSize(CGSize(width: 600, height: max(430, controls.fittingSize.height + 40)))
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] { [.flexibleSpace, settingsItemID] }

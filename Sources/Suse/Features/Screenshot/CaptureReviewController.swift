@@ -1,7 +1,7 @@
 import AppKit
 import UniformTypeIdentifiers
 
-enum CaptureReviewAction { case scroll, reselect, done }
+enum CaptureReviewAction { case scroll, reselect, pinned, done }
 
 @MainActor
 private final class CaptureReviewView: NSView {
@@ -32,6 +32,7 @@ final class CaptureReviewController: NSViewController {
     private let displaySize: CGSize
     private let allowsScrolling: Bool
     private let pasteboard: NSPasteboard
+    private let onPin: ((CGImage) throws -> Void)?
     private let status = UI.label("", size: 12, weight: .medium)
     private let statusBadge = NSBox()
     private let scroll = NSScrollView()
@@ -44,11 +45,12 @@ final class CaptureReviewController: NSViewController {
     var onAction: ((CaptureReviewAction) -> Void)?
 
     init(image: CGImage, selectionRect: CGRect, displaySize: CGSize, allowsScrolling: Bool,
-         pasteboard: NSPasteboard = .general) {
+         pasteboard: NSPasteboard = .general, onPin: ((CGImage) throws -> Void)? = nil) {
         self.selectionRect = selectionRect
         self.displaySize = displaySize
         self.allowsScrolling = allowsScrolling
         self.pasteboard = pasteboard
+        self.onPin = onPin
         canvas = AnnotationCanvas(image: image, displayWidth: selectionRect.width)
         super.init(nibName: nil, bundle: nil)
         canvas.requestText = { [weak self] in self?.requestText(at: $0) }
@@ -93,12 +95,17 @@ final class CaptureReviewController: NSViewController {
         save.keyEquivalent = "s"
         save.keyEquivalentModifierMask = [.command]
         save.toolTip = "保存截图（⌘S）"
+        let pin = ActionButton("Pin", symbol: "pin", style: .accessoryBar) { [weak self] in self?.pinImage() }
+        pin.keyEquivalent = "p"
+        pin.keyEquivalentModifierMask = [.command]
+        pin.toolTip = "Pin 当前截图并退出（⌘P）"
+        pin.isEnabled = onPin != nil
         let reselect = ActionButton(icon: "重选", symbol: "crop", style: .accessoryBar) { [weak self] in self?.onAction?(.reselect) }
         let cancel = ActionButton(icon: "取消", symbol: "xmark", symbolColor: .systemRed, style: .accessoryBar) { [weak self] in self?.onAction?(.done) }
         cancel.toolTip = "取消截图（Esc）"
         let actions = UI.stack([
             scrolling,
-            UI.stack([reselect, save], axis: .horizontal, spacing: 8),
+            UI.stack([reselect, save, pin], axis: .horizontal, spacing: 8),
             UI.stack([cancel, copy], axis: .horizontal, spacing: 8),
         ], axis: .horizontal, spacing: 16)
         let palette = UI.glassBar(makePalette(), inset: 8)
@@ -151,7 +158,14 @@ final class CaptureReviewController: NSViewController {
         let margin: CGFloat = 8
         let x = min(max(margin, selectionRect.minX), displaySize.width - size.width - margin)
         let candidates = [selectionRect.minY - size.height - margin, selectionRect.maxY + margin, selectionRect.minY + margin]
-        let frames = candidates.map { CGRect(x: x, y: $0, width: size.width, height: size.height) }
+        var frames = candidates.map { CGRect(x: x, y: $0, width: size.width, height: size.height) }
+        if let toolbar {
+            // Small corner selections may leave no room beside the full action bar.
+            // Move feedback around the controls without moving either toolbar anchor.
+            frames.append(CGRect(x: x, y: toolbar.frame.maxY + margin, width: size.width, height: size.height))
+            frames.append(CGRect(x: x, y: toolbar.frame.minY - size.height - margin, width: size.width, height: size.height))
+            frames.append(CGRect(x: toolbar.frame.maxX + margin, y: margin, width: size.width, height: size.height))
+        }
         statusBadge.frame = frames.first {
             view.bounds.contains($0) && !(toolbar?.frame.intersects($0) ?? false)
         } ?? CGRect(x: x, y: margin, width: size.width, height: size.height)
@@ -262,6 +276,17 @@ final class CaptureReviewController: NSViewController {
             setStatus("已复制 · \(canvas.image.width) × \(canvas.image.height) px")
             if completing { onAction?(.done) }
         } catch { UI.error(error, in: view.window) }
+    }
+
+    func pinImage() {
+        guard let onPin else { return }
+        do {
+            try onPin(canvas.renderedImage())
+            onAction?(.pinned)
+        } catch {
+            setStatus("Pin 失败：\(error.localizedDescription)")
+            status.toolTip = error.localizedDescription
+        }
     }
 
     private func pngData() throws -> Data {

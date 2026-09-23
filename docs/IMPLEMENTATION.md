@@ -21,9 +21,10 @@ superuse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**
 - `LoginItemSettingsView` 通过 `SMAppService.mainApp` 管理当前应用的登录项，以系统状态为准，不另存 UserDefaults 开关；注册失败恢复实际状态，等待批准时提供系统设置入口。`LoginItemService` 隔离系统调用，测试替身不会注册真实登录项。`AppLaunchContext` 识别系统登录启动事件，保留菜单栏功能并跳过工具箱自动展示。
 - `mainApp` 首次查询可能因没有登录项记录而返回 `.notFound`。设置页仍允许用户打开开关，届时调用 `register()`；打开设置和刷新状态都不会自动注册。注册失败展示系统错误，并保留重试入口。
 - `Shared`：功能接口、快捷键注册、设置存储和少量原生 UI 工具。
-- `Features/Clipboard`、`Features/Screenshot`：各自持有状态、UI、服务，不相互调用。
+- `Features/Clipboard`、`Features/Screenshot`、`Features/Pins`：各自持有状态、UI、服务，不相互调用；组合根通过共享的 `PinPresenting` 协议接入 Pin。
 - 功能通过 `FeatureModule` 提供命令和设置页。共享层不感知具体功能。
 - `CaptureSelectionState` 只处理坐标命中、点击 / 拖动和确认状态；`SelectionController` 管理冻结的屏幕覆盖层；`CaptureReviewController` 管理原位标注和导出；`ScreenshotModule` 串联选择、预览与滚动会话。
+- `PinStore` 持有会话快照、内容预算和显隐 / 穿透状态；`PinWindowController` 使用带原生标题栏的非激活 `NSPanel` 呈现图片或可直接编辑的纯文本。文字修改即时更新 Pin 自身快照和资源占用，不回写历史条目；每个窗口独立维护原生撤销，输入超预算时保留已接受内容。窗口参考 Preview，隐藏重复标题，使用系统 `NSToolbar` 和居中图片画布；宽度不足 480 pt 时隐藏缩放组，统一从「更多」进入，避免溢出菜单再嵌套「更多」。截图通过最终标注渲染结果创建 Pin，剪贴板直接使用所选条目，不经系统剪贴板中转。截图抑制 token 与用户隐藏状态分开保存；结束、取消和失败统一释放 token。菜单栏独立提供穿透恢复入口。
 
 只在存在实际变化点时引入协议；避免仓储、工厂等无需求的抽象。状态在主线程管理，CPU 密集处理移出 UI 线程。
 

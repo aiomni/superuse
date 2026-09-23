@@ -100,13 +100,13 @@ final class SelectionController {
     }
 
     func review(image: CGImage, selection: CaptureSelection, allowsScrolling: Bool,
-                copyAutomatically: Bool) async -> CaptureReviewAction {
+                copyAutomatically: Bool, onPin: ((CGImage) throws -> Void)? = nil) async -> CaptureReviewAction {
         guard let window = overlays.first(where: { $0.frame == selection.snapshot.appKitFrame }),
               let view = window.contentView as? SelectionView else { return .done }
         let rect = selection.target.rect.offsetBy(dx: -selection.snapshot.display.frame.minX,
                                                  dy: -selection.snapshot.display.frame.minY)
         let controller = CaptureReviewController(image: image, selectionRect: rect,
-                                                 displaySize: view.bounds.size, allowsScrolling: allowsScrolling)
+                                                 displaySize: view.bounds.size, allowsScrolling: allowsScrolling, onPin: onPin)
         reviewController = controller
         window.handleReviewKey = { [weak controller] in
             controller?.view.performKeyEquivalent(with: $0) ?? false

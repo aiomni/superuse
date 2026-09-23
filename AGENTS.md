@@ -32,6 +32,7 @@ For behavior changes, add or update meaningful regression coverage and run affec
 
 - Keep Foundation/CoreGraphics models and algorithms in `Sources/SuseCore/`, isolated from the AppKit lifecycle. The app composition root is in `Sources/Suse/App/`; reusable contracts and helpers are in `Sources/Suse/Shared/`.
 - Features in `Sources/Suse/Features/` implement `@MainActor FeatureModule`, expose commands and settings views, and register in `AppCoordinator.configureFeatures()`. Feature implementations must not call one another; shared code must not depend on concrete features.
+- Screenshot and clipboard features access floating content through the injected `PinPresenting` contract. Keep Pin snapshots and windows owned by `PinsModule`; `AppCommand` may have no default shortcut.
 - Match existing four-space indentation, lowerCamelCase members, UpperCamelCase types, and descriptive test names. Prefer existing helpers and small types over speculative abstractions.
 - Keep AppKit calls and UI state on `@MainActor`. Preserve actor-based processing in `ScrollStitcher` and ordered persistence in `ClipboardDisk`. Respect isolation and `Sendable` constraints rather than suppressing checks.
 - Preserve task cancellation, single-resume continuations, timer cleanup, and the shutdown sequence that stops features and flushes pending clipboard writes.
@@ -53,6 +54,7 @@ For behavior changes, add or update meaningful regression coverage and run affec
 - Screenshot selection freezes the desktop, distinguishes clicks from drags, and stays within one display. Review and annotations reuse the overlay. Preserve Retina pixel dimensions and coordinate handling for negative display origins.
 - Scrolling capture uses manual downward scrolling and is bounded to 30,000 pixels in height or 48 million pixels.
 - Clipboard recording and sensitive-marker filtering default to enabled; persistence defaults to disabled. Preserve the 100-entry default, 50/100/200 choices, 8 MiB item limit, and 32 MiB total across insertion, editing, and restoration.
+- Pin supports images and plain text and is session-only, independent of clipboard persistence. Preserve its 16-window, 256 MiB content-memory, and 48 MP image limits. Pin must not implicitly copy content. Text Pins edit their own session snapshot, preserve native selection/undo/IME behavior, and enforce the shared content budget when replacing text (including empty text). History eviction/editing keeps snapshots; explicit deletion closes associated Pins. Screenshot capture suppression must restore each Pin's previous hidden state on success, failure, and cancellation, with a menu-bar recovery path for mouse click-through.
 - Login-item state comes from `SMAppService.mainApp`, not a stored toggle. Opening or refreshing settings must not register the app. `.notFound` allows an explicit registration attempt; errors restore the actual system state. Login launches suppress the toolbox, while manual launches show it.
 
 ## Tests and manual checks

@@ -9,11 +9,14 @@ final class ClipboardModule: FeatureModule {
     let summary = "找回刚才复制的文字和图片，接着使用。"
     private let settings: SettingsStore
     private let store: ClipboardStore
-    private lazy var panel = ClipboardPanelController(store: store)
+    private let pins: (any PinPresenting)?
+    private lazy var panel = ClipboardPanelController(store: store, pins: pins)
 
-    init(settings: SettingsStore) {
+    init(settings: SettingsStore, pins: (any PinPresenting)? = nil, store: ClipboardStore? = nil) {
         self.settings = settings
-        self.store = ClipboardStore(settings: settings)
+        self.store = store ?? ClipboardStore(settings: settings)
+        self.pins = pins
+        self.store.onExplicitRemoval = { [weak pins] in pins?.closeClipboardPins(entryID: $0) }
     }
 
     var commands: [AppCommand] {
@@ -55,7 +58,7 @@ final class ClipboardModule: FeatureModule {
             UI.section(UI.row(ActionButton("系统剪贴板访问设置", symbol: "lock.shield") {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!)
             }, ActionButton("清空全部历史", symbol: "trash") { [weak self] in self?.store.clear() })),
-            UI.label("↑↓ 选择，Return 复制，⌘Return 粘贴到唤起前的应用，⌘E 编辑，⌘Delete 删除。\n支持文本与图片；单条上限 8 MB，总计上限 32 MB。敏感标记由来源应用提供，无法识别所有秘密内容。", size: 12, color: .secondaryLabelColor),
+            UI.label("↑↓ 选择，Return 复制，⌘Return 粘贴到唤起前的应用，⌘E 编辑，⌘P Pin，⌘Delete 删除。\n主动删除历史时会关闭相关 Pin。支持文本与图片；单条上限 8 MB，总计上限 32 MB。敏感标记由来源应用提供，无法识别所有秘密内容。", size: 12, color: .secondaryLabelColor),
         ])
     }
 

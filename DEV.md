@@ -102,12 +102,19 @@ Switching from an ad-hoc signature or changing certificates can require reauthor
 | `Sources/Suse/Shared/` | Feature contracts, shortcut registration, settings, app identity, icons, and AppKit helpers |
 | `Sources/Suse/Features/Clipboard/` | Clipboard polling, persistence, history panel, and direct paste |
 | `Sources/Suse/Features/Screenshot/` | Screen acquisition, selection overlays, review, annotations, and scrolling capture |
+| `Sources/Suse/Features/Pins/` | Session snapshots, floating image/text panels, visibility, and Pin management |
 | `Tests/SuseCoreTests/` | Model, coordinate, selection, and stitching tests |
 | `Tests/SuseAppTests/` | AppKit integration, layout, and login-item tests |
 | `scripts/` | App packaging and icon generation |
 | `Resources/` | Bundle metadata and icon assets |
 
 Features implement `@MainActor FeatureModule`, expose `AppCommand` values and settings views, and are registered in `AppCoordinator.configureFeatures()`. They own their state and services independently. Feature implementations do not call one another, and the shared layer does not depend on concrete features.
+
+The composition root injects the shared `PinPresenting` contract into screenshot and clipboard modules. `PinsModule` owns `PinStore` and `PinWindowController` instances; screenshots and clipboard history never access those concrete types. Pin management has no default global shortcut. `AppCommand.defaultShortcut` may be nil, while saved shortcut overrides and disabled states retain their existing behavior.
+
+Pin snapshots live only in memory. Text Pins edit their own snapshot through validated `PinStore.updateText` calls, leaving the source history entry unchanged. Each text view has its own native undo manager (up to 50 undo groups); typing, plain-text paste, and IME updates retain native selection and undo state. Editing replaces the previous allocation, including at the window-count limit, and may leave an empty note. Preflight rejects edits that exceed the shared content budget, with a last-accepted-value fallback for changes that bypass preflight. The editor uses the injected pasteboard for copy, cut, and paste, including context-menu actions. Clipboard Pin reads the selected entry directly, without copying it through the system pasteboard. Screenshot Pin uses `AnnotationCanvas.renderedImage()` and completes only after the snapshot is accepted. Screenshot crops are detached from their parent display bitmap so a small Pin does not retain a full frozen desktop. Encoded clipboard images are checked for dimensions and estimated decoded size before decoding. The content budget is separate from clipboard-history limits and does not represent a hard ceiling on process RSS, undo history, or transient render buffers.
+
+Pin panels use `.floating`, `.nonactivatingPanel`, `.canJoinAllSpaces`, and `.fullScreenAuxiliary`. Their native titled windows and `NSToolbar` follow Preview: the visible title is hidden, Copy and More remain available, and an `NSToolbarItemGroup` for zoom appears at widths of 480 points or more. Smaller windows access zoom directly through More rather than a nested toolbar overflow menu. AppKit supplies the toolbar glass; the centered image canvas and editable plain text remain outside glass. Short text notes size to their content, and image layout clamps scroll offsets after resizing to preserve canvas margins. The menu bar provides an independent recovery path for `ignoresMouseEvents`. Capture suppression uses scoped tokens separately from per-item hidden state: every screenshot exit resumes its token, including cancellation and errors. A new Pin created during capture becomes visible after the overlay closes. Explicit history removals close associated Pins; eviction and editing do not. Shutdown closes panels and releases snapshots without writing them to disk.
 
 AppKit state lives on the main actor. `ScrollStitcher` handles image processing in an actor, and `ClipboardDisk` serializes persistence using revision numbers. Shutdown stops feature activity and awaits pending clipboard writes.
 
@@ -145,6 +152,8 @@ swift test --filter InterfaceLayoutTests
 Tests use Swift Testing (`import Testing`, `@Test`, `#expect`, and `#require`). AppKit suites use main-actor isolation and serialization where needed. Tests use dedicated pasteboards, isolated UserDefaults suites, temporary files, and login-item service doubles; they do not read real clipboard history or register real login items.
 
 Coverage includes bounded history, sensitive markers, persistence deletion, pixel-level stitching, selection and coordinate conversion, annotation export, anchored toolbar layout, and login-item recovery. Check `swift test list` for the current test inventory instead of relying on a fixed test count.
+
+Pin tests cover snapshot independence, count and decoded-memory limits, nested capture suppression, early screenshot cancellation without permission requests, annotated Pin exports, clipboard deletion versus eviction, selection copying, image copies after scaling, click-through recovery, and window cleanup. `PinGeometryTests` covers negative display origins and recovery after display removal. Pin layout checks include minimum-size windows in all four supported appearances. Tests use dedicated pasteboards and temporary persistence URLs, and keep Pin windows offscreen; real focus, drag, window-server glass, and full-screen behavior require manual checks.
 
 Generate optional layout previews:
 

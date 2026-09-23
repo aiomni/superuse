@@ -14,6 +14,7 @@ A small toolbox in your Mac's menu bar. Capture and annotate screenshots, save l
 - **Annotate before sharing.** Add arrows, shapes, text, freehand marks, mosaics, and opaque redactions, with undo and redo.
 - **Capture a long page.** Scroll through the content yourself while superuse combines it into one image.
 - **Find your clipboard history.** Search copied text and images, edit text, and copy or paste an earlier entry.
+- **Pin a reference to your screen.** Keep screenshots, clipboard images, and plain text in floating windows while you work.
 - **Make it fit your workflow.** Customize shortcuts, pause clipboard recording, and choose whether to launch at login.
 
 ## Getting started
@@ -37,7 +38,7 @@ For building the app from source, see the [development guide](DEV.md).
 1. Press **Shift + Command + A** to freeze the screen. Move over a window to select it, or over the desktop to select the screen.
 2. **Click** to confirm, or **drag** to select an area.
 3. Annotation tools are ready immediately. Draw on the image, start a scrolling capture, change the selection, save, or copy.
-4. Press **Return** to copy and finish, **Shift + Command + C** to copy and keep editing, **Command + S** to save, or **Esc** to cancel.
+4. Press **Return** to copy and finish, **Shift + Command + C** to copy and keep editing, **Command + S** to save, **Command + P** to Pin the annotated image, or **Esc** to cancel.
 
 While annotating, use **Command + Z** to undo and **Shift + Command + Z** to redo. **Esc** exits the screenshot even while the canvas or an editing control has focus. In a text-entry or save dialog, the dialog handles its own keyboard shortcuts.
 
@@ -65,6 +66,7 @@ Open clipboard history and start typing to search. Use the keyboard or double-cl
 | Return or double-click | Copy the entry and close the panel |
 | Command + Return | Paste into the app you were using before opening history |
 | Command + E | Edit a text entry |
+| Command + P or Pin | Open the selected text or image in a floating window |
 | Command + Delete | Delete an entry |
 | Command + F | Focus search |
 | Esc | Close the panel |
@@ -72,6 +74,22 @@ Open clipboard history and start typing to search. Use the keyboard or double-cl
 superuse keeps the latest **100 entries** by default. Choose 50, 100, or 200 in settings. Copying the same content again moves it to the top.
 
 History supports text and images. Rich-text formatting and file attachments are not preserved. You can pause recording, exclude specific apps, or clear your history at any time.
+
+## Pin images and text
+
+Click **Pin** in screenshot preview or clipboard history, or press **Command + P** there. Clipboard entries also have a Pin action in their context menu. Pin uses the current content, including screenshot annotations, and closes the preview or history panel after success. Pin does not additionally copy or save anything; the screenshot automatic-copy setting still applies.
+
+Drag an image or a window's top bar to move it. Drag the edges to resize. Images scale proportionally, and long images scroll. Click text to edit it directly. Text preserves line breaks and indentation, wraps to the window width, and accepts plain-text paste. Edits stay in the current Pin automatically; they do not change the original history entry or copy anything to the clipboard. Copy uses the latest text, and clearing a note leaves an editable empty Pin.
+
+Each floating window uses a native macOS title bar with standard window controls, Copy, and More. Images sit on a centered canvas. Wide image windows show a zoom group; compact windows keep zoom, original size, and fit to screen in More without an extra overflow menu. More also offers opacity and **mouse click-through**. With click-through enabled, clicks reach the app underneath. Open **Manage Pin (管理 Pin)** from the menu bar to restore interaction, reveal an individual Pin, hide or show all, or close all. Manage Pin is also available in the toolbox, and you can assign it a shortcut in settings.
+
+In a focused Pin, **Command + C** copies selected text or the full content, and **Command + W** closes the window. Text supports **Command + X / V / A** for cut, paste, and select all, **Command + Z** to undo, and **Shift + Command + Z** to redo. For images, **Command + =**, **Command + -**, and **Command + 0** zoom in, zoom out, and restore the original display size. Copies preserve the full image dimensions regardless of display size or opacity.
+
+Pins stay above ordinary app windows and remain available across Spaces. They are temporarily hidden while taking screenshots, including scrolling capture, and return after completion or cancellation. Moving and opening a Pin does not activate the app; text selection can give the panel keyboard focus.
+
+Pins last only for the current session and are cleared when you quit. They are not saved to disk, even when clipboard-history persistence is enabled. Automatic history eviction and edits leave existing Pins unchanged. Explicitly deleting a history entry closes its Pins; clearing history closes all clipboard-derived Pins. Closing a Pin does not delete its history entry.
+
+You can keep up to **16 Pins** open, within a **256 MiB content-memory budget**, with images up to **48 million pixels**. At a limit, close some Pins before creating another. Text edits also respect the shared content budget; an oversized edit is rejected while keeping the previous text. Existing Pins are not automatically evicted.
 
 ## Permissions and privacy
 

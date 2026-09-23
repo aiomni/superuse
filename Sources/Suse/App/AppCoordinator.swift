@@ -6,6 +6,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     private let settings = SettingsStore()
     private lazy var hub = ShortcutHub(settings: settings)
     private var features: [any FeatureModule] = []
+    private let pins = PinsModule()
     private var statusItem: NSStatusItem?
     private var dashboard: DashboardWindowController?
     private var settingsWindow: SettingsWindowController?
@@ -29,7 +30,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
 
     private func configureFeatures() {
-        features = [ScreenshotModule(settings: settings), ClipboardModule(settings: settings)]
+        features = [ScreenshotModule(settings: settings, pins: pins), ClipboardModule(settings: settings, pins: pins), pins]
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -96,6 +97,7 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
             item.target = self
             item.tag = menuActions.count
             menuActions.append(command.perform)
+            if command.id == "pins.manage" { item.submenu = pins.makeMenu() }
             menu.addItem(item)
         }
         menu.addItem(.separator())

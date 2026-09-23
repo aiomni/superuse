@@ -18,7 +18,8 @@ struct InterfaceLayoutTests {
         let suite = "app.suse.layout.\(UUID().uuidString)"
         let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
         defer { settings.defaults.removePersistentDomain(forName: suite) }
-        let features: [any FeatureModule] = [ScreenshotModule(settings: settings), ClipboardModule(settings: settings)]
+        let pins = PinsModule(showsWindows: false)
+        let features: [any FeatureModule] = [ScreenshotModule(settings: settings, pins: pins), ClipboardModule(settings: settings, pins: pins), pins]
         let hub = ShortcutHub(settings: settings)
         let dashboard = DashboardWindowController(features: features, hub: hub, openSettings: {})
         let preferences = SettingsWindowController(features: features, hub: hub)
@@ -36,7 +37,7 @@ struct InterfaceLayoutTests {
             settingsWindow.setContentSize(CGSize(width: 740, height: 510))
             let settingsContent = try #require(settingsWindow.contentView)
             let sidebar = try #require(descendants(settingsContent).first { $0 is NSTableView } as? NSTableView)
-            for row in [0, 2, 3] {
+            for row in [0, 2, 3, 4] {
                 sidebar.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 settingsContent.layoutSubtreeIfNeeded()
                 let page = try #require(descendants(settingsContent).compactMap { $0 as? NSScrollView }
@@ -56,14 +57,16 @@ struct InterfaceLayoutTests {
         let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
         let pasteboard = NSPasteboard.withUniqueName()
         defer { settings.defaults.removePersistentDomain(forName: suite); pasteboard.releaseGlobally() }
-        let store = ClipboardStore(settings: settings, pasteboard: pasteboard)
+        let store = ClipboardStore(settings: settings, pasteboard: pasteboard,
+                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.json"))
         for text in ["随手记录一个想法", "一个快捷键，自动选择屏幕和窗口。", "原生界面，紧凑布局。",
                      "保留内容的清晰度，让操作控件浮在上方。", "可以用方向键选择历史内容。", "superuse · 截图与剪贴板"] {
             pasteboard.clearContents()
             pasteboard.setString(text, forType: .string)
             store.checkForChanges()
         }
-        let controller = ClipboardPanelController(store: store)
+        let pins = PinsModule(pasteboard: pasteboard, showsWindows: false)
+        let controller = ClipboardPanelController(store: store, pins: pins)
         let window = try #require(controller.window)
         for (name, appearance) in appearances {
             window.appearance = NSAppearance(named: appearance)
@@ -77,6 +80,52 @@ struct InterfaceLayoutTests {
             #expect(content.bounds.contains(content.convert(scroll.bounds, from: scroll)))
             #expect(window.toolbar?.items.contains { $0 is NSSearchToolbarItem } == true)
             try render(window, named: "clipboard-\(name)")
+        }
+    }
+
+    @Test func pinWindowsUseNativeToolbarsAndKeepContentOutsideGlass() throws {
+        _ = NSApplication.shared
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+        let store = PinStore()
+        try store.insert(PinRequest(content: .text(String(repeating: "参考内容 · 可以选中复制\n", count: 40)), source: .screenshot))
+        let image = screenshotFixture(size: CGSize(width: 1200, height: 800))
+        try store.insert(PinRequest(content: .image(image, pointSize: CGSize(width: 600, height: 400)), source: .screenshot))
+        let screen = CGRect(x: 0, y: 0, width: 1200, height: 800)
+        for (index, item) in store.items.enumerated() {
+            let controller = PinWindowController(item: item, visibleFrame: screen, anchor: CGPoint(x: 100, y: 700), pasteboard: pasteboard)
+            let window = try #require(controller.window)
+            for (name, appearance) in appearances {
+                window.appearance = NSAppearance(named: appearance)
+                for size in [CGSize(width: 280, height: 168), CGSize(width: 560, height: 420)] {
+                    window.setContentSize(size)
+                    let content = try #require(window.contentView)
+                    content.layoutSubtreeIfNeeded()
+                    let scroll = try #require(descendants(content).first { $0 is NSScrollView } as? NSScrollView)
+                    let toolbar = try #require(window.toolbar)
+                    #expect(window.styleMask.contains(.titled))
+                    #expect(window.titleVisibility == .hidden)
+                    #expect(window.standardWindowButton(.closeButton) != nil)
+                    #expect(!descendants(content).contains { $0 is NSGlassEffectView })
+                    #expect(toolbar.items.contains { $0.itemIdentifier.rawValue == "pin.copy" })
+                    #expect(toolbar.items.contains { $0 is NSMenuToolbarItem })
+                    if let zoom = toolbar.items.first(where: { $0 is NSToolbarItemGroup }) {
+                        controller.windowDidResize(Notification(name: NSWindow.didResizeNotification, object: window))
+                        #expect(zoom.isHidden == (window.frame.width < 480))
+                    }
+                    #expect(scroll.frame.height >= 120)
+                    if let image = descendants(content).compactMap({ $0 as? NSImageView }).first {
+                        let canvas = try #require(scroll.documentView)
+                        #expect(abs(image.frame.midX - canvas.bounds.midX) < 1)
+                        #expect(abs(image.frame.midY - canvas.bounds.midY) < 1)
+                        #expect(abs(image.frame.width / image.frame.height - 1.5) < 0.01)
+                        #expect(image.frame.width <= scroll.contentSize.width - 31)
+                        #expect(abs(scroll.contentView.convert(image.bounds, from: image).midX - scroll.contentView.bounds.midX) < 1)
+                    }
+                    if let text = controller.textView { #expect(abs(text.frame.width - scroll.contentSize.width) < 1) }
+                    try render(window, named: "pin-\(index)-\(Int(size.width))-\(name)", includingFrame: true)
+                }
+            }
         }
     }
 
@@ -166,9 +215,9 @@ struct InterfaceLayoutTests {
         return image.cgImage(forProposedRect: nil, context: nil, hints: nil)!
     }
 
-    private func render(_ window: NSWindow, named name: String) throws {
+    private func render(_ window: NSWindow, named name: String, includingFrame: Bool = false) throws {
         guard let directory = ProcessInfo.processInfo.environment["SUSE_UI_PREVIEW_DIRECTORY"] else { return }
-        let view = try #require(window.contentView)
+        let view = try #require(includingFrame ? window.contentView?.superview : window.contentView)
         view.layoutSubtreeIfNeeded()
         let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         window.effectiveAppearance.performAsCurrentDrawingAppearance {

@@ -14,8 +14,9 @@ private final class HistoryPanel: NSPanel {
 
 @MainActor
 final class ClipboardPanelController: NSWindowController, NSTableViewDataSource, NSTableViewDelegate,
-                                      NSSearchFieldDelegate, NSWindowDelegate, NSToolbarDelegate {
+                                      NSSearchFieldDelegate, NSWindowDelegate, NSToolbarDelegate, NSMenuDelegate {
     private let store: ClipboardStore
+    private let pins: (any PinPresenting)?
     private let pasteService = PasteService()
     private let table = NSTableView()
     private let search = NSSearchField()
@@ -26,8 +27,9 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     private var sourceApplication: NSRunningApplication?
     private var pasteTask: Task<Void, Never>?
 
-    init(store: ClipboardStore) {
+    init(store: ClipboardStore, pins: (any PinPresenting)? = nil) {
         self.store = store
+        self.pins = pins
         let panel = HistoryPanel(contentRect: NSRect(x: 0, y: 0, width: 620, height: 490),
                                  styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
         panel.title = "剪贴板"
@@ -86,6 +88,13 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         table.target = self
         table.doubleAction = #selector(copySelected)
         table.setAccessibilityLabel("剪贴板历史记录")
+        let contextMenu = NSMenu()
+        contextMenu.autoenablesItems = false
+        contextMenu.delegate = self
+        let pinItem = NSMenuItem(title: "Pin", action: #selector(pinFromContextMenu), keyEquivalent: "")
+        pinItem.target = self
+        contextMenu.addItem(pinItem)
+        table.menu = contextMenu
         let scroll = NSScrollView()
         scroll.documentView = table
         scroll.hasVerticalScroller = true
@@ -101,10 +110,14 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
             emptyState.centerXAnchor.constraint(equalTo: list.centerXAnchor),
             emptyState.centerYAnchor.constraint(equalTo: list.centerYAnchor),
         ])
+        let pin = ActionButton("Pin", symbol: "pin", style: .glass) { [weak self] in self?.pinSelected() }
+        pin.isEnabled = pins != nil
+        pin.toolTip = "Pin 选中的内容（⌘P）"
         let actions = UI.stack([
             ActionButton("复制", symbol: "doc.on.doc", style: .glass) { [weak self] in self?.commit(paste: false) },
             ActionButton("粘贴到原应用", symbol: "arrow.turn.down.left", style: .glass) { [weak self] in self?.commit(paste: true) },
             ActionButton("编辑", symbol: "pencil", style: .glass) { [weak self] in self?.editSelected() },
+            pin,
         ], axis: .horizontal, spacing: 8)
         let footer = UI.stack([UI.glassContainer(actions), status], spacing: 8)
         let content = ContentBackgroundView()
@@ -147,7 +160,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
             let index = visibleEntries.firstIndex(where: { $0.id == selectedID }) ?? 0
             table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
         }
-        status.stringValue = "\(visibleEntries.count) 条记录  ·  ↑↓ 选择  ·  ↩ 复制  ·  ⌘↩ 粘贴  ·  ⌘E 编辑"
+        status.stringValue = "\(visibleEntries.count) 条记录  ·  ↑↓ 选择  ·  ↩ 复制  ·  ⌘↩ 粘贴  ·  ⌘E 编辑  ·  ⌘P Pin"
         if let notice = store.accessNotice { status.stringValue = notice }
         if let error = store.persistenceError { status.stringValue = "历史保存失败：\(error)" }
     }
@@ -185,6 +198,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
             table.scrollRowToVisible(index)
         case 36, 76: commit(paste: command)
         case 14 where command: editSelected()
+        case 35 where event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command]: pinSelected()
         case 3 where command: searchItem.beginSearchInteraction()
         case 51 where command:
             if let entry = selectedEntry { store.remove(entry) }
@@ -194,6 +208,33 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     }
 
     @objc private func copySelected() { commit(paste: false) }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.items.first?.isEnabled = pins != nil && visibleEntries.indices.contains(table.clickedRow)
+    }
+
+    @objc private func pinFromContextMenu() {
+        guard visibleEntries.indices.contains(table.clickedRow) else { return }
+        table.selectRowIndexes(IndexSet(integer: table.clickedRow), byExtendingSelection: false)
+        pinSelected()
+    }
+
+    func pinSelected() {
+        guard let entry = selectedEntry, let pins else { NSSound.beep(); return }
+        let content: PinRequest.Content
+        switch entry.content {
+        case .text(let text): content = .text(text)
+        case .image(let data): content = .imageData(data, scale: window?.screen?.backingScaleFactor ?? 1)
+        }
+        do {
+            try pins.pin(PinRequest(content: content, source: .clipboard(entry.id)))
+            window?.orderOut(nil)
+            sourceApplication?.activate()
+        } catch {
+            status.stringValue = "Pin 失败：\(error.localizedDescription)"
+            status.toolTip = error.localizedDescription
+        }
+    }
 
     private func commit(paste: Bool) {
         guard let entry = selectedEntry else { NSSound.beep(); return }
