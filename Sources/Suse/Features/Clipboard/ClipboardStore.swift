@@ -102,9 +102,9 @@ final class ClipboardStore {
             convertImage = true
         } else { return }
         let entry = ClipboardEntry(content: content, source: source?.localizedName ?? "未知应用")
-        let limit = countLimit
+        let settings = settings
         let needsConversion = convertImage
-        enqueue { try await $0.capture(entry, limit: limit, convertImage: needsConversion) }
+        enqueue { try await $0.capture(entry, limit: max(1, settings.defaults.integer(forKey: "clipboard.limit")), convertImage: needsConversion) }
     }
 
     func copy(_ entry: ClipboardEntry, expectedChangeCount: Int? = nil) -> Bool {
@@ -120,8 +120,17 @@ final class ClipboardStore {
     }
 
     func edit(_ record: ClipboardRecord, text: String) async -> Bool {
-        let limit = countLimit
-        return await enqueue { try await $0.edit(record, text: text, limit: limit) }.value
+        let settings = settings
+        return await enqueue { try await $0.edit(record, text: text, limit: max(1, settings.defaults.integer(forKey: "clipboard.limit"))) }.value
+    }
+
+    func setPinned(_ record: ClipboardRecord, pinned: Bool) {
+        let settings = settings
+        enqueue { try await $0.setPinned(id: record.id, pinned: pinned, limit: max(1, settings.defaults.integer(forKey: "clipboard.limit"))) }
+    }
+
+    func movePinned(id: UUID, before nextID: UUID?) {
+        enqueue { try await $0.movePinned(id: id, before: nextID) }
     }
 
     func remove(_ record: ClipboardRecord) {
@@ -144,7 +153,7 @@ final class ClipboardStore {
     }
 
     @discardableResult
-    private func enqueue<T: Sendable>(_ operation: @escaping @Sendable (ClipboardDisk) async throws -> T,
+    private func enqueue<T: Sendable>(_ operation: @escaping @MainActor @Sendable (ClipboardDisk) async throws -> T,
                                       completion: (@MainActor () -> Void)? = nil) -> Task<Bool, Never> {
         let preceding = writeTask
         let task = Task { [weak self, disk] in

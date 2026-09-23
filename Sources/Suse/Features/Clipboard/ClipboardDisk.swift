@@ -87,6 +87,55 @@ actor ClipboardDisk {
 
     func clear() throws { try open().run("DELETE FROM history") }
 
+    func setPinned(id: UUID, pinned: Bool, limit: Int) throws {
+        let db = try open()
+        try db.transaction {
+            guard let current = try db.query("SELECT pin_order IS NOT NULL FROM history WHERE id = ?",
+                                             [.text(id.uuidString)], map: { $0.integer(0) != 0 }).first else {
+                throw ClipboardStorageError(message: "这条记录已删除，请重新选择。")
+            }
+            guard current != pinned else { return }
+            if pinned {
+                try db.run("UPDATE history SET pin_order = (SELECT COALESCE(MIN(pin_order), 1) - 1 FROM history) WHERE id = ?",
+                           [.text(id.uuidString)])
+            } else {
+                try db.run("UPDATE history SET pin_order = NULL WHERE id = ?", [.text(id.uuidString)])
+                try trim(db, limit: limit)
+            }
+        }
+    }
+
+    /// Use a neighboring identity, rather than a visible row number that can change during a drag.
+    func movePinned(id: UUID, before nextID: UUID?) throws {
+        guard id != nextID else { return }
+        let db = try open()
+        try db.transaction {
+            func order(of id: UUID) throws -> Int {
+                guard let order = try db.query("SELECT pin_order FROM history WHERE id = ? AND pin_order IS NOT NULL",
+                                               [.text(id.uuidString)], map: { $0.integer(0) }).first else {
+                    throw ClipboardStorageError(message: "置顶记录已改变，请重新拖动。")
+                }
+                return order
+            }
+            let current = try order(of: id)
+            let destination: Int
+            if let nextID {
+                let next = try order(of: nextID)
+                destination = next > current ? next - 1 : next
+            } else {
+                destination = try db.query("SELECT MAX(pin_order) FROM history") { $0.integer(0) }.first ?? current
+            }
+            if destination < current {
+                try db.run("UPDATE history SET pin_order = pin_order + 1 WHERE pin_order >= ? AND pin_order < ?",
+                           [.integer(destination), .integer(current)])
+            } else if destination > current {
+                try db.run("UPDATE history SET pin_order = pin_order - 1 WHERE pin_order > ? AND pin_order <= ?",
+                           [.integer(current), .integer(destination)])
+            }
+            try db.run("UPDATE history SET pin_order = ? WHERE id = ?", [.integer(destination), .text(id.uuidString)])
+        }
+    }
+
     func counts() throws -> (pinned: Int, ordinary: Int) {
         let db = try open()
         return try db.query("SELECT COUNT(pin_order), COUNT(*) - COUNT(pin_order) FROM history") {

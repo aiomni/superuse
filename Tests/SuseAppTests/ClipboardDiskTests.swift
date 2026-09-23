@@ -109,3 +109,79 @@ struct ClipboardDiskTests {
         #expect(try await disk.content(for: record).content.byteCount == body.utf8.count + 1)
     }
 }
+
+extension ClipboardDiskTests {
+    @Test func pinnedHistoryIsAdditionalToOrdinaryRetentionAndKeepsItsPosition() async throws {
+        let url = location()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let disk = ClipboardDisk(url: url)
+        var ids: [UUID] = []
+        for number in 0..<5 {
+            let entry = ClipboardEntry(content: .text("entry \(number)"), capturedAt: Date(timeIntervalSince1970: Double(number)), source: "Fixture")
+            ids.append(entry.id)
+            try await disk.capture(entry, limit: 2)
+            if number < 2 { try await disk.setPinned(id: entry.id, pinned: true, limit: 2) }
+        }
+        #expect(try await disk.page().records.map(\.id) == [ids[1], ids[0], ids[4], ids[3]])
+        try await disk.capture(.init(content: .text("entry 0"), capturedAt: Date(timeIntervalSince1970: 10), source: "Again"), limit: 2)
+        var record = try #require(try await disk.page().records.first { $0.id == ids[0] })
+        #expect(record.modifiedAt == Date(timeIntervalSince1970: 10))
+        #expect(try await disk.page().records.first?.id == ids[1])
+        try await disk.edit(record, text: "edited", limit: 2, now: Date(timeIntervalSince1970: 20))
+        record = try #require(try await disk.page().records.first { $0.id == ids[0] })
+        #expect(record.isPinned)
+        #expect(try await disk.page().records.map(\.id) == [ids[1], ids[0], ids[4], ids[3]])
+        try await disk.setPinned(id: ids[0], pinned: false, limit: 2)
+        #expect(try await disk.page().records.map(\.id) == [ids[1], ids[0], ids[4]])
+        #expect(try await disk.counts().pinned == 1)
+        #expect(try await disk.counts().ordinary == 2)
+        #expect(try await disk.page(query: "edited").records.map(\.id) == [ids[0]])
+        try await disk.clear()
+        #expect(try await disk.page().total == 0)
+    }
+
+    @Test func manualPinnedOrderSurvivesNewPinsRecaptureAndRestart() async throws {
+        let url = location()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let disk = ClipboardDisk(url: url)
+        let entries = (0..<4).map { ClipboardEntry(content: .text("entry \($0)"), source: "Fixture") }
+        for entry in entries.prefix(3) {
+            try await disk.capture(entry, limit: 1)
+            try await disk.setPinned(id: entry.id, pinned: true, limit: 1)
+        }
+        try await disk.movePinned(id: entries[0].id, before: entries[2].id)
+        #expect(try await disk.page().records.map(\.id) == [entries[0].id, entries[2].id, entries[1].id])
+        try await disk.capture(entries[3], limit: 1)
+        try await disk.setPinned(id: entries[3].id, pinned: true, limit: 1)
+        try await disk.capture(.init(content: entries[1].content, source: "Again"), limit: 1)
+        #expect(try await disk.page().records.map(\.id) == [entries[3].id, entries[0].id, entries[2].id, entries[1].id])
+        try await disk.movePinned(id: entries[3].id, before: nil)
+        let restarted = ClipboardDisk(url: url)
+        #expect(try await restarted.page().records.map(\.id) == [entries[0].id, entries[2].id, entries[1].id, entries[3].id])
+        try await disk.setPinned(id: entries[2].id, pinned: false, limit: 1)
+        await #expect(throws: ClipboardStorageError.self) { try await disk.movePinned(id: entries[2].id, before: entries[0].id) }
+        try await disk.setPinned(id: entries[2].id, pinned: true, limit: 1)
+        #expect(try await disk.page().records.first?.id == entries[2].id)
+    }
+
+    @Test(arguments: [0, 1, 2, 3])
+    func editingDuplicatePreservesEitherPinnedState(mask: Int) async throws {
+        let url = location()
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+        let disk = ClipboardDisk(url: url)
+        let first = ClipboardEntry(content: .text("first"), source: "Fixture")
+        let second = ClipboardEntry(content: .text("second"), source: "Fixture")
+        try await disk.capture(first, limit: 10)
+        try await disk.capture(second, limit: 10)
+        if mask & 1 != 0 { try await disk.setPinned(id: first.id, pinned: true, limit: 10) }
+        if mask & 2 != 0 { try await disk.setPinned(id: second.id, pinned: true, limit: 10) }
+        let record = try #require(try await disk.page().records.first { $0.id == first.id })
+        let other = try #require(try await disk.page().records.first { $0.id == second.id })
+        try await disk.edit(record, text: "second", limit: 10)
+        let merged = try #require(try await disk.page().records.first)
+        #expect(try await disk.page().total == 1)
+        #expect(merged.id == first.id)
+        #expect(merged.isPinned == (mask != 0))
+        #expect(merged.pinOrder == (record.pinOrder ?? other.pinOrder))
+    }
+}

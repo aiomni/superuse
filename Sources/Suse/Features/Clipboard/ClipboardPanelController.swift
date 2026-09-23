@@ -27,6 +27,8 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     private var selectedEntry: ClipboardRecord?
     private var reloadTask: Task<Void, Never>?
     private var actionTask: Task<Void, Never>?
+    private var contextRecord: ClipboardRecord?
+    private static let rowDragType = NSPasteboard.PasteboardType("app.suse.clipboard-history-row")
     private var sourceApplication: NSRunningApplication?
     private var pasteTask: Task<Void, Never>?
 
@@ -98,9 +100,15 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         table.target = self
         table.doubleAction = #selector(copySelected)
         table.setAccessibilityLabel("剪贴板历史记录")
+        table.registerForDraggedTypes([Self.rowDragType])
+        table.setDraggingSourceOperationMask(.move, forLocal: true)
         let contextMenu = NSMenu()
         contextMenu.autoenablesItems = false
         contextMenu.delegate = self
+        let stickyItem = NSMenuItem(title: "置顶", action: #selector(togglePinnedFromContextMenu), keyEquivalent: "")
+        stickyItem.target = self
+        contextMenu.addItem(stickyItem)
+        contextMenu.addItem(.separator())
         let pinItem = NSMenuItem(title: "Pin", action: #selector(pinFromContextMenu), keyEquivalent: "")
         pinItem.target = self
         contextMenu.addItem(pinItem)
@@ -247,13 +255,59 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     @objc private func copySelected() { commit(paste: false) }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.items.first?.isEnabled = pins != nil && list.record(at: table.clickedRow) != nil
+        let row = table.clickedRow >= 0 ? table.clickedRow : table.selectedRow
+        contextRecord = list.record(at: row)
+        menu.items.first?.title = contextRecord?.isPinned == true ? "取消置顶" : "置顶"
+        menu.items.first?.isEnabled = contextRecord != nil
+        menu.items.last?.isEnabled = pins != nil && contextRecord != nil
+    }
+
+    @objc private func togglePinnedFromContextMenu() {
+        guard let record = contextRecord else { return }
+        selectedEntry = record
+        store.setPinned(record, pinned: !record.isPinned)
     }
 
     @objc private func pinFromContextMenu() {
-        guard list.record(at: table.clickedRow) != nil else { return }
-        table.selectRowIndexes(IndexSet(integer: table.clickedRow), byExtendingSelection: false)
+        guard let record = contextRecord else { return }
+        selectedEntry = record
         pinSelected()
+    }
+
+    func tableView(_ tableView: NSTableView, pasteboardWriterForRow row: Int) -> (any NSPasteboardWriting)? {
+        guard search.stringValue.isEmpty, let record = list.record(at: row), record.isPinned else { return nil }
+        let item = NSPasteboardItem()
+        item.setString(record.id.uuidString, forType: Self.rowDragType)
+        return item
+    }
+
+    func tableView(_ tableView: NSTableView, validateDrop info: any NSDraggingInfo,
+                   proposedRow row: Int, proposedDropOperation operation: NSTableView.DropOperation) -> NSDragOperation {
+        guard search.stringValue.isEmpty, info.draggingSource as? NSTableView === table,
+              info.draggingPasteboard.string(forType: Self.rowDragType) != nil,
+              isPinnedDropBoundary(row) else { return [] }
+        tableView.setDropRow(row, dropOperation: .above)
+        return .move
+    }
+
+    func tableView(_ tableView: NSTableView, acceptDrop info: any NSDraggingInfo,
+                   row: Int, dropOperation: NSTableView.DropOperation) -> Bool {
+        guard search.stringValue.isEmpty, info.draggingSource as? NSTableView === table,
+              let value = info.draggingPasteboard.string(forType: Self.rowDragType), let id = UUID(uuidString: value),
+              isPinnedDropBoundary(row) else { return false }
+        let next = list.record(at: row)
+        store.movePinned(id: id, before: next?.isPinned == true ? next?.id : nil)
+        return true
+    }
+
+    private func isPinnedDropBoundary(_ row: Int) -> Bool {
+        guard row >= 0, row <= list.total else { return false }
+        if row < list.total {
+            guard let next = list.record(at: row) else { return false }
+            if next.isPinned { return true }
+        }
+        // The boundary immediately after the last pinned row is a valid drop target too.
+        return row > 0 && list.record(at: row - 1)?.isPinned == true
     }
 
     func pinSelected() {
