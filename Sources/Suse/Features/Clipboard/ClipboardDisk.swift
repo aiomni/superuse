@@ -143,9 +143,21 @@ actor ClipboardDisk {
         }.first ?? (0, 0)
     }
 
-    func setLimit(_ limit: Int) throws {
+    func retentionPlan(limit: Int) throws -> ClipboardRetentionPlan {
+        guard limit > 0 else { throw ClipboardStorageError(message: "保留数量必须是正整数。") }
+        let counts = try counts()
+        return ClipboardRetentionPlan(limit: limit, pinnedCount: counts.pinned, ordinaryCount: counts.ordinary)
+    }
+
+    /// If the dialog's deletion counts are stale, return an updated plan without deleting anything.
+    func applyRetention(_ approved: ClipboardRetentionPlan) throws -> ClipboardRetentionPlan? {
         let db = try open()
-        try db.transaction { try trim(db, limit: limit) }
+        return try db.transaction {
+            let current = try retentionPlan(limit: approved.limit)
+            if current.removedCount > 0, current != approved { return current }
+            try trim(db, limit: approved.limit)
+            return nil
+        }
     }
 
     private func open() throws -> SQLiteDatabase {

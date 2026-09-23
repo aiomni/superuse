@@ -36,8 +36,6 @@ final class ClipboardModule: FeatureModule {
                 self?.store.settingsChanged()
             }
         }
-        let limit = NSSegmentedControl(labels: ["50 条", "100 条", "200 条", "1000 条"], trackingMode: .selectOne, target: self, action: #selector(limitChanged(_:)))
-        limit.selectedSegment = [50, 100, 200, 1000].firstIndex(of: defaults.integer(forKey: "clipboard.limit")) ?? 3
         let exclusions = NSTextField(string: defaults.string(forKey: "clipboard.excludedApps") ?? "")
         exclusions.placeholderString = "com.example.passwordmanager, com.example.private"
         exclusions.target = self
@@ -45,25 +43,19 @@ final class ClipboardModule: FeatureModule {
         let recording = UI.groupedRows([
             toggle("记录剪贴板历史", key: "clipboard.enabled"),
             toggle("忽略敏感内容", subtitle: "跳过密码管理器等应用标记的内容。", key: "clipboard.ignoreSensitive"),
-            UI.row(UI.label("最多保留"), limit),
         ])
         let excludedApps = UI.stack([
             UI.label("排除应用", size: 14, weight: .semibold), exclusions,
             UI.label("填写 Bundle ID，以逗号分隔，按回车保存。", size: 11, color: .secondaryLabelColor),
         ], spacing: 8)
         exclusions.widthAnchor.constraint(equalTo: excludedApps.widthAnchor).isActive = true
-        return UI.settingsPage("剪贴板历史", subtitle: "只在本机处理，随时暂停或清空。", controls: [
-            recording, UI.section(excludedApps),
+        return UI.settingsPage("剪贴板历史", subtitle: "历史自动保存在本机，退出后保留；可随时暂停记录或清空。", controls: [
+            recording, UI.section(ClipboardRetentionSettingsView(store: store)), UI.section(excludedApps),
             UI.section(UI.row(ActionButton("系统剪贴板访问设置", symbol: "lock.shield") {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!)
             }, ActionButton("清空全部历史", symbol: "trash") { [weak self] in self?.store.clear() })),
             UI.label("↑↓ 选择，Return 复制，⌘Return 粘贴到唤起前的应用，⌘E 编辑，⌘P Pin，⌘Delete 删除。\n主动删除历史时会关闭相关 Pin。支持文本与图片，历史自动保存在本机。敏感标记由来源应用提供，无法识别所有秘密内容。", size: 12, color: .secondaryLabelColor),
         ])
-    }
-
-    @objc private func limitChanged(_ sender: NSSegmentedControl) {
-        let limit = [50, 100, 200, 1000][sender.selectedSegment]
-        Task { await store.setLimit(limit) }
     }
 
     @objc private func exclusionsChanged(_ sender: NSTextField) {

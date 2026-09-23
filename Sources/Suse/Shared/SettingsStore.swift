@@ -8,10 +8,15 @@ final class SettingsStore {
         self.defaults = defaults
         defaults.register(defaults: [
             "clipboard.enabled": true,
-            "clipboard.limit": 1000,
+            "clipboard.limit": ClipboardRetention.defaultLimit,
             "clipboard.ignoreSensitive": true,
             "screenshot.copyAfterCapture": true,
         ])
+    }
+
+    var clipboardLimit: Int {
+        let value = defaults.integer(forKey: "clipboard.limit")
+        return value > 0 ? value : ClipboardRetention.defaultLimit
     }
 
     func shortcut(for id: String) -> Shortcut? {

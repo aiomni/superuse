@@ -14,7 +14,7 @@ final class ClipboardStore {
     var onChange: (() -> Void)?
     var onExplicitRemoval: ((UUID?) -> Void)?
 
-    var countLimit: Int { max(1, settings.defaults.integer(forKey: "clipboard.limit")) }
+    var countLimit: Int { settings.clipboardLimit }
     var pasteboardChangeCount: Int { pasteboard.changeCount }
 
     var accessNotice: String? {
@@ -104,7 +104,7 @@ final class ClipboardStore {
         let entry = ClipboardEntry(content: content, source: source?.localizedName ?? "未知应用")
         let settings = settings
         let needsConversion = convertImage
-        enqueue { try await $0.capture(entry, limit: max(1, settings.defaults.integer(forKey: "clipboard.limit")), convertImage: needsConversion) }
+        enqueue { try await $0.capture(entry, limit: settings.clipboardLimit, convertImage: needsConversion) }
     }
 
     func copy(_ entry: ClipboardEntry, expectedChangeCount: Int? = nil) -> Bool {
@@ -121,12 +121,14 @@ final class ClipboardStore {
 
     func edit(_ record: ClipboardRecord, text: String) async -> Bool {
         let settings = settings
-        return await enqueue { try await $0.edit(record, text: text, limit: max(1, settings.defaults.integer(forKey: "clipboard.limit"))) }.value
+        let result = await enqueue { try await $0.edit(record, text: text, limit: settings.clipboardLimit) }.value
+        if case .success = result { return true }
+        return false
     }
 
     func setPinned(_ record: ClipboardRecord, pinned: Bool) {
         let settings = settings
-        enqueue { try await $0.setPinned(id: record.id, pinned: pinned, limit: max(1, settings.defaults.integer(forKey: "clipboard.limit"))) }
+        enqueue { try await $0.setPinned(id: record.id, pinned: pinned, limit: settings.clipboardLimit) }
     }
 
     func movePinned(id: UUID, before nextID: UUID?) {
@@ -134,17 +136,23 @@ final class ClipboardStore {
     }
 
     func remove(_ record: ClipboardRecord) {
-        enqueue({ try await $0.remove(id: record.id) }, completion: { [weak self] in self?.onExplicitRemoval?(record.id) })
+        enqueue({ try await $0.remove(id: record.id) }, completion: { [weak self] _ in self?.onExplicitRemoval?(record.id) })
     }
 
     func clear() {
-        enqueue({ try await $0.clear() }, completion: { [weak self] in self?.onExplicitRemoval?(nil) })
+        enqueue({ try await $0.clear() }, completion: { [weak self] _ in self?.onExplicitRemoval?(nil) })
     }
 
-    func setLimit(_ limit: Int) async -> Bool {
-        await enqueue({ try await $0.setLimit(limit) }, completion: { [weak self] in
-            self?.settings.defaults.set(limit, forKey: "clipboard.limit")
+    func retentionPlan(limit: Int) async throws -> ClipboardRetentionPlan {
+        await flush()
+        return try await disk.retentionPlan(limit: limit)
+    }
+
+    func applyRetention(_ plan: ClipboardRetentionPlan) async throws -> ClipboardRetentionPlan? {
+        let result = await enqueue({ try await $0.applyRetention(plan) }, completion: { [weak self] revisedPlan in
+            if revisedPlan == nil { self?.settings.defaults.set(plan.limit, forKey: "clipboard.limit") }
         }).value
+        return try result.get()
     }
 
     func counts() async throws -> (pinned: Int, ordinary: Int) {
@@ -154,20 +162,20 @@ final class ClipboardStore {
 
     @discardableResult
     private func enqueue<T: Sendable>(_ operation: @escaping @MainActor @Sendable (ClipboardDisk) async throws -> T,
-                                      completion: (@MainActor () -> Void)? = nil) -> Task<Bool, Never> {
+                                      completion: (@MainActor (T) -> Void)? = nil) -> Task<Result<T, Error>, Never> {
         let preceding = writeTask
-        let task = Task { [weak self, disk] in
+        let task = Task<Result<T, Error>, Never> { [weak self, disk] in
             await preceding?.value
             do {
-                _ = try await operation(disk)
+                let value = try await operation(disk)
                 self?.persistenceError = nil
-                completion?()
+                completion?(value)
                 self?.onChange?()
-                return true
+                return .success(value)
             } catch {
                 self?.persistenceError = error.localizedDescription
                 self?.onChange?()
-                return false
+                return .failure(error)
             }
         }
         writeTask = Task { _ = await task.value }
