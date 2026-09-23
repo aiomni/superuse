@@ -7,7 +7,6 @@ final class CaptureLoupeView: NSView {
     private let magnifier: CaptureMagnifierView
     private let coordinates = NSTextField(labelWithString: "")
     private let colorValue = NSTextField(labelWithString: "")
-    private let shortcut = NSTextField(labelWithString: "⇧ 切换格式 · ⌘C 复制")
     private let swatch = NSBox()
     private var glass: NSGlassEffectView?
 
@@ -17,12 +16,10 @@ final class CaptureLoupeView: NSView {
         setAccessibilityIdentifier("capture-loupe")
         coordinates.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         colorValue.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
-        for label in [coordinates, colorValue, shortcut] {
+        for label in [coordinates, colorValue] {
             label.textColor = .labelColor
             label.setContentCompressionResistancePriority(.required, for: .horizontal)
         }
-        shortcut.font = .systemFont(ofSize: 10)
-        shortcut.textColor = .secondaryLabelColor
         swatch.boxType = .custom
         swatch.titlePosition = .noTitle
         swatch.cornerRadius = 3
@@ -32,14 +29,16 @@ final class CaptureLoupeView: NSView {
         swatch.heightAnchor.constraint(equalToConstant: 12).isActive = true
         let valueRow = UI.stack([swatch, colorValue], axis: .horizontal, spacing: 6)
         valueRow.alignment = .centerY
-        let content = UI.stack([magnifier, coordinates, valueRow, shortcut], spacing: 6)
-        content.alignment = .centerX
-        content.widthAnchor.constraint(equalToConstant: 168).isActive = true
-        let glass = UI.glassBar(content, radius: 14, inset: 10)
+        let readings = UI.stack([coordinates, valueRow], spacing: 4)
+        readings.alignment = .centerX
+        let glass = UI.glassBar(readings, radius: 6, inset: 8)
         self.glass = glass
         glass.tintColor = .windowBackgroundColor
-        addSubview(glass)
-        UI.pin(glass, to: self, inset: 0)
+        let content = UI.stack([magnifier, glass], spacing: 4)
+        content.alignment = .centerX
+        glass.widthAnchor.constraint(equalTo: magnifier.widthAnchor).isActive = true
+        addSubview(content)
+        UI.pin(content, to: self, inset: 0)
         updateAppearance()
         frame.size = fittingSize
         isHidden = true
@@ -58,7 +57,7 @@ final class CaptureLoupeView: NSView {
 
     func update(sample: CapturePixel, format: CaptureColorFormat, kind: CaptureTarget.Kind, feedback: String? = nil) {
         magnifier.update(sample)
-        coordinates.stringValue = "X: \(sample.x)   Y: \(sample.y)"
+        coordinates.stringValue = feedback ?? "X: \(sample.x)   Y: \(sample.y)"
         colorValue.stringValue = format.string(for: sample.color)
         swatch.fillColor = NSColor(srgbRed: CGFloat(sample.color.red) / 255,
                                   green: CGFloat(sample.color.green) / 255,
@@ -69,7 +68,6 @@ final class CaptureLoupeView: NSView {
         case .window: selectionDescription = "窗口，单击确认"
         case .region: selectionDescription = "区域，松开确认"
         }
-        shortcut.stringValue = feedback ?? "⇧ 切换格式 · ⌘C 复制"
         setAccessibilityLabel("\(selectionDescription)，\(coordinates.stringValue)，\(format.rawValue) \(colorValue.stringValue)。Shift 切换格式，Command C 复制色值，Escape 取消。")
     }
 
@@ -94,15 +92,15 @@ private final class CaptureMagnifierView: NSView {
     private var sample: CapturePixel?
     private var crop: NSImage?
     private var destination = CGRect.zero
-    private let cellSize: CGFloat = 8
+    private let cellSize: CGFloat = 10
     private let pixelCount = 17
     override var isFlipped: Bool { true }
 
     init(image: CGImage) {
         self.image = image
-        super.init(frame: CGRect(x: 0, y: 0, width: 136, height: 136))
-        widthAnchor.constraint(equalToConstant: 136).isActive = true
-        heightAnchor.constraint(equalToConstant: 136).isActive = true
+        super.init(frame: CGRect(x: 0, y: 0, width: 170, height: 170))
+        widthAnchor.constraint(equalToConstant: 170).isActive = true
+        heightAnchor.constraint(equalToConstant: 170).isActive = true
         setAccessibilityIdentifier("capture-magnifier")
         setAccessibilityLabel("鼠标位置的像素放大镜，中心方格为取色像素")
     }
@@ -136,7 +134,5 @@ private final class CaptureMagnifierView: NSView {
         NSColor.white.setStroke()
         marker.lineWidth = 1
         marker.stroke()
-        NSColor.white.withAlphaComponent(0.4).setStroke()
-        NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5)).stroke()
     }
 }

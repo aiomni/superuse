@@ -75,6 +75,8 @@ struct CaptureLoupeTests {
         let fixture = try makeFixture()
         defer { fixture.pasteboard.releaseGlobally() }
         let loupe = try #require(fixture.view.subviews.first { $0 is CaptureLoupeView } as? CaptureLoupeView)
+        let magnifier = try #require(descendants(loupe).first { $0.accessibilityIdentifier() == "capture-magnifier" })
+        let readings = try #require(descendants(loupe).first { $0 is NSGlassEffectView })
         for appearance in [NSAppearance.Name.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {
             fixture.window.appearance = NSAppearance(named: appearance)
             for cursor in [CGPoint(x: 1, y: 1), CGPoint(x: 599, y: 1), CGPoint(x: 599, y: 399), CGPoint(x: 1, y: 399)] {
@@ -83,8 +85,16 @@ struct CaptureLoupeTests {
                 #expect(fixture.view.bounds.contains(loupe.frame))
                 #expect(!loupe.frame.contains(cursor))
                 #expect(loupe.frame.width < 220 && loupe.frame.height < 260)
+                let imageRect = loupe.convert(magnifier.bounds, from: magnifier)
+                let readingsRect = loupe.convert(readings.bounds, from: readings)
+                #expect(!magnifier.isDescendant(of: readings))
+                #expect(imageRect.width == imageRect.height)
+                #expect(abs(imageRect.minX - readingsRect.minX) < 1)
+                #expect(abs(imageRect.width - readingsRect.width) < 1)
+                #expect(imageRect.minY >= readingsRect.maxY + 3)
                 let visibleLabels = descendants(loupe).compactMap { $0 as? NSTextField }.map(\.stringValue)
                 #expect(!visibleLabels.contains { $0.contains("确认") })
+                #expect(visibleLabels.count == 2)
             }
         }
         fixture.view.mouseMoved(with: try mouse(.mouseMoved, CGPoint(x: 20, y: 20), fixture))
@@ -128,6 +138,7 @@ struct CaptureLoupeTests {
             let rendered = CapturePixelSampler(image: try renderCanvas(magnifier), displayFrame: magnifier.bounds)
             let center = CGPoint(x: magnifier.bounds.midX, y: magnifier.bounds.midY)
             #expect(rendered.sample(at: center)?.color == sample.color)
+            #expect(rendered.sample(at: .zero)?.color == CaptureColor(red: 0, green: 0, blue: 0))
         }
     }
 
