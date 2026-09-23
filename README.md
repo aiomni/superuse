@@ -8,6 +8,8 @@ A small toolbox in your Mac's menu bar. Capture and annotate screenshots, save l
 
 **Requires macOS 26 or later.** The app's interface is currently in Simplified Chinese.
 
+superuse is a prototype. Stored data formats may change between builds without migration.
+
 ## What you can do
 
 - **Capture a screen, window, or region.** Select a window with a click or drag around exactly what you need.
@@ -67,11 +69,18 @@ Open clipboard history and start typing to search. Use the keyboard or double-cl
 | Command + Return | Paste into the app you were using before opening history |
 | Command + E | Edit a text entry |
 | Command + P or Pin | Open the selected text or image in a floating window |
+| Right-click → 置顶 / 取消置顶 | Keep an entry at the top of history, or unpin it |
 | Command + Delete | Delete an entry |
 | Command + F | Focus search |
 | Esc | Close the panel |
 
-superuse keeps the latest **100 entries** by default. Choose 50, 100, or 200 in settings. Copying the same content again moves it to the top.
+superuse keeps the latest **1,000 ordinary entries** by default. Enter any positive whole number in settings to change this count. Pinned entries are kept in addition to that count and are protected from automatic cleanup. Reducing the count asks for confirmation when it would delete older ordinary entries.
+
+Right-click an entry and choose **置顶** to keep it above ordinary history. A small pin badge overlays its text or image icon. Newly pinned entries start at the top; drag pinned rows to arrange them when the search field is empty. Their order is saved across restarts. Copying the same content again or editing a pinned entry keeps it pinned in the same position.
+
+Ordinary history is ordered by the last capture or edit. Copying an entry from this panel does not change its position. Unpinning returns it to ordinary history at that position, where the ordinary retention count applies. Search covers all saved history and shows matching pinned entries first. Deleting an entry or clearing all history also removes pinned entries.
+
+History is saved automatically and restored after restarting superuse. Large histories load as you browse them. Clipboard history has no fixed per-entry or total byte limit.
 
 History supports text and images. Rich-text formatting and file attachments are not preserved. You can pause recording, exclude specific apps, or clear your history at any time.
 
@@ -87,7 +96,7 @@ In a focused Pin, **Command + C** copies selected text or the full content, and 
 
 Pins stay above ordinary app windows and remain available across Spaces. They are temporarily hidden while taking screenshots, including scrolling capture, and return after completion or cancellation. Moving and opening a Pin does not activate the app; text selection can give the panel keyboard focus.
 
-Pins last only for the current session and are cleared when you quit. They are not saved to disk, even when clipboard-history persistence is enabled. Automatic history eviction and edits leave existing Pins unchanged. Explicitly deleting a history entry closes its Pins; clearing history closes all clipboard-derived Pins. Closing a Pin does not delete its history entry.
+Desktop Pins last only for the current session and are cleared when you quit. The floating windows are not restored when saved clipboard history is loaded. Automatic history eviction and edits leave existing Pins unchanged. Explicitly deleting a history entry closes its Pins; clearing history closes all clipboard-derived Pins. Closing a Pin does not delete its history entry.
 
 You can keep up to **16 Pins** open, within a **256 MiB content-memory budget**, with images up to **48 million pixels**. At a limit, close some Pins before creating another. Text edits also respect the shared content budget; an oversized edit is rejected while keeping the previous text. Existing Pins are not automatically evicted.
 
@@ -104,7 +113,7 @@ superuse works locally on your Mac and does not require an account.
 
 Settings includes shortcuts to the relevant system settings. Without Accessibility permission, you can still copy an entry and paste it yourself. If direct paste cannot return to the target app, the entry remains copied for manual pasting.
 
-Clipboard history is kept only for the current session by default. Enable persistence in settings to keep it after restarting the app. Turning persistence off deletes the saved copy while keeping the current session's history available. Saved history is not encrypted by superuse.
+Clipboard history is always saved locally, including entries pinned at the top of the list. Pausing recording stops collection of new content and keeps existing history available. Delete individual entries or clear all history to remove saved content. Saved history is not encrypted by superuse.
 
 > [!NOTE]
 > superuse skips content marked sensitive by the source app by default, but it cannot recognize every password or secret. Pause recording or exclude an app when working with sensitive information.
