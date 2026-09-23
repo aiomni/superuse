@@ -8,12 +8,13 @@ final class CaptureLoupeView: NSView {
     private let coordinates = NSTextField(labelWithString: "")
     private let colorValue = NSTextField(labelWithString: "")
     private let swatch = NSBox()
-    private var glass: NSGlassEffectView?
 
     init(image: CGImage) {
         magnifier = CaptureMagnifierView(image: image)
         super.init(frame: .zero)
         setAccessibilityIdentifier("capture-loupe")
+        coordinates.setAccessibilityIdentifier("capture-coordinates")
+        colorValue.setAccessibilityIdentifier("capture-color-value")
         coordinates.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         colorValue.font = .monospacedSystemFont(ofSize: 11, weight: .medium)
         for label in [coordinates, colorValue] {
@@ -29,36 +30,28 @@ final class CaptureLoupeView: NSView {
         swatch.heightAnchor.constraint(equalToConstant: 12).isActive = true
         let valueRow = UI.stack([swatch, colorValue], axis: .horizontal, spacing: 6)
         valueRow.alignment = .centerY
-        let readings = UI.stack([coordinates, valueRow], spacing: 4)
+        let shortcuts = NSTextField(labelWithString: "⇧ 切换格式 · ⌘C 复制")
+        shortcuts.font = .systemFont(ofSize: 10)
+        shortcuts.textColor = .secondaryLabelColor
+        let readings = UI.stack([coordinates, valueRow, shortcuts], spacing: 4)
         readings.alignment = .centerX
         let glass = UI.glassBar(readings, radius: 6, inset: 8)
-        self.glass = glass
-        glass.tintColor = .windowBackgroundColor
         let content = UI.stack([magnifier, glass], spacing: 4)
         content.alignment = .centerX
         glass.widthAnchor.constraint(equalTo: magnifier.widthAnchor).isActive = true
         addSubview(content)
         UI.pin(content, to: self, inset: 0)
-        updateAppearance()
         frame.size = fittingSize
         isHidden = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-    override func viewDidChangeEffectiveAppearance() { super.viewDidChangeEffectiveAppearance(); updateAppearance() }
-
-    private func updateAppearance() {
-        guard let glass else { return }
-        let contrast = effectiveAppearance.bestMatch(from: [.accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua, .aqua, .darkAqua])
-        let highContrast = contrast == .accessibilityHighContrastAqua || contrast == .accessibilityHighContrastDarkAqua
-        glass.appearance = NSAppearance(named: highContrast ? .accessibilityHighContrastDarkAqua : .darkAqua)
-    }
 
     func update(sample: CapturePixel, format: CaptureColorFormat, kind: CaptureTarget.Kind, feedback: String? = nil) {
         magnifier.update(sample)
-        coordinates.stringValue = feedback ?? "X: \(sample.x)   Y: \(sample.y)"
-        colorValue.stringValue = format.string(for: sample.color)
+        coordinates.stringValue = "X: \(sample.x)   Y: \(sample.y)"
+        colorValue.stringValue = feedback ?? format.string(for: sample.color)
         swatch.fillColor = NSColor(srgbRed: CGFloat(sample.color.red) / 255,
                                   green: CGFloat(sample.color.green) / 255,
                                   blue: CGFloat(sample.color.blue) / 255, alpha: 1)

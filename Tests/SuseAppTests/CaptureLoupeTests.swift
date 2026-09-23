@@ -42,6 +42,13 @@ struct CaptureLoupeTests {
         let point = CGPoint(x: 123.5, y: 87.25)
         fixture.view.mouseMoved(with: try mouse(.mouseMoved, point, fixture))
         let loupe = try #require(fixture.view.subviews.first { $0 is CaptureLoupeView } as? CaptureLoupeView)
+        let coordinates = try #require(descendants(loupe).first { $0.accessibilityIdentifier() == "capture-coordinates" } as? NSTextField)
+        let colorValue = try #require(descendants(loupe).first { $0.accessibilityIdentifier() == "capture-color-value" } as? NSTextField)
+        let shortcuts = try #require(descendants(loupe).compactMap { $0 as? NSTextField }.first { $0.stringValue.contains("⌘C") })
+        fixture.view.layoutSubtreeIfNeeded()
+        let originalFrame = loupe.frame
+        let coordinatesFrame = coordinates.convert(coordinates.bounds, to: loupe)
+        let colorRowY = colorValue.convert(colorValue.bounds, to: loupe).midY
         #expect(loupe.accessibilityLabel()?.contains("X: 247   Y: 174") == true)
         let initialChanges = fixture.pasteboard.changeCount
         let down = try key(.flagsChanged, code: 56, modifiers: [.shift], fixture)
@@ -53,15 +60,27 @@ struct CaptureLoupeTests {
         #expect(fixture.window.performKeyEquivalent(with: try key(.keyDown, code: 8, modifiers: [.command], fixture)))
         #expect(fixture.pasteboard.string(forType: .string) == "#336699")
         #expect(loupe.accessibilityLabel()?.contains("HEX") == true)
+        fixture.view.layoutSubtreeIfNeeded()
+        #expect(coordinates.stringValue == "X: 247   Y: 174")
+        #expect(colorValue.stringValue == "已复制 HEX 色值")
+        #expect(!shortcuts.isHiddenOrHasHiddenAncestor)
+        #expect(shortcuts.stringValue.contains("⇧") && shortcuts.stringValue.contains("复制"))
+        #expect(loupe.frame == originalFrame)
+        #expect(coordinates.convert(coordinates.bounds, to: loupe) == coordinatesFrame)
+        #expect(colorValue.convert(colorValue.bounds, to: loupe).midY == colorRowY)
+        fixture.view.mouseMoved(with: try mouse(.mouseMoved, point, fixture))
+        #expect(colorValue.stringValue == "#336699")
         fixture.window.sendEvent(up)
         fixture.window.sendEvent(down)
         #expect(fixture.inspector.format == .hsl)
+        #expect(colorValue.stringValue == "hsl(210, 50%, 40%)")
         fixture.window.sendEvent(up)
         fixture.window.sendEvent(try key(.keyDown, code: 8, modifiers: [.command], fixture))
         #expect(fixture.pasteboard.string(forType: .string) == "hsl(210, 50%, 40%)")
         fixture.window.sendEvent(down)
         fixture.window.sendEvent(up)
         #expect(fixture.inspector.format == .rgb)
+        #expect(colorValue.stringValue == "rgb(51, 102, 153)")
         let changes = fixture.pasteboard.changeCount
         #expect(!fixture.window.performKeyEquivalent(with: try key(.keyDown, code: 8, modifiers: [.command, .option], fixture)))
         #expect(fixture.pasteboard.changeCount == changes)
@@ -79,6 +98,8 @@ struct CaptureLoupeTests {
         let readings = try #require(descendants(loupe).first { $0 is NSGlassEffectView })
         for appearance in [NSAppearance.Name.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua] {
             fixture.window.appearance = NSAppearance(named: appearance)
+            #expect(readings.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) ==
+                    fixture.window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]))
             for cursor in [CGPoint(x: 1, y: 1), CGPoint(x: 599, y: 1), CGPoint(x: 599, y: 399), CGPoint(x: 1, y: 399)] {
                 fixture.view.mouseMoved(with: try mouse(.mouseMoved, cursor, fixture))
                 fixture.view.layoutSubtreeIfNeeded()
@@ -94,7 +115,7 @@ struct CaptureLoupeTests {
                 #expect(imageRect.minY >= readingsRect.maxY + 3)
                 let visibleLabels = descendants(loupe).compactMap { $0 as? NSTextField }.map(\.stringValue)
                 #expect(!visibleLabels.contains { $0.contains("确认") })
-                #expect(visibleLabels.count == 2)
+                #expect(visibleLabels.contains("⇧ 切换格式 · ⌘C 复制"))
             }
         }
         fixture.view.mouseMoved(with: try mouse(.mouseMoved, CGPoint(x: 20, y: 20), fixture))
