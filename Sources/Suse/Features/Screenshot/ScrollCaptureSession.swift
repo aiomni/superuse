@@ -9,7 +9,7 @@ final class ScrollCaptureSession {
     private let region: CGRect
     private let display: SCDisplay
     private var content: SCShareableContent
-    private var panel: NSPanel?
+    private var panel: ScrollCapturePanel?
     private var outline: NSWindow?
     private var task: Task<Void, Never>?
     private var completion: CheckedContinuation<CGImage?, Never>?
@@ -18,8 +18,6 @@ final class ScrollCaptureSession {
     private var finishRequested = false
     private var cancelled = false
     private var frameCount = 1
-    private let status = UI.label("准备捕获…", size: 12, color: .secondaryLabelColor)
-    private var pauseButton: ActionButton?
 
     init(capture: ScreenCaptureService, region: CGRect, display: SCDisplay, content: SCShareableContent) {
         self.capture = capture
@@ -38,52 +36,39 @@ final class ScrollCaptureSession {
             showControls()
             showOutline()
             source?.activate()
-            task = Task { [weak self] in
-                guard let self else { return }
-                do {
-                    // Refresh after creating the HUD, so even a previously hidden app is in the
-                    // application exclusion list. Otherwise its new controls could enter a frame.
-                    content = try await capture.content()
-                    try Task.checkCancellation()
-                    await sampleUntilCancelled()
-                } catch is CancellationError { }
-                catch {
-                    paused = true
-                    status.stringValue = error.localizedDescription
-                }
+            startSampling()
+        }
+    }
+
+    private func startSampling() {
+        task?.cancel()
+        task = Task { [weak self] in
+            guard let self else { return }
+            do {
+                // Refresh after creating the HUD and on retry so controls remain excluded.
+                content = try await capture.content()
+                try Task.checkCancellation()
+                await sampleUntilCancelled()
+            } catch is CancellationError { }
+            catch {
+                guard !Task.isCancelled, !finishing, !cancelled else { return }
+                paused = true
+                panel?.update(state: .retry, message: error.localizedDescription)
             }
         }
     }
 
     private func showControls() {
-        let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 520, height: 124),
-                            styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        panel.backgroundColor = .clear
-        panel.isOpaque = false
-        panel.hasShadow = true
-        panel.level = .screenSaver
-        panel.isFloatingPanel = true
-        panel.becomesKeyOnlyIfNeeded = true
-        panel.hidesOnDeactivate = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.isMovableByWindowBackground = true
-        let pause = ActionButton("暂停", symbol: "pause", style: .toolbar) { [weak self] in self?.togglePause() }
-        pauseButton = pause
-        let controls = UI.stack([
-            UI.label("缓慢向下滚动，停稳后自动拼接", size: 14, weight: .medium), status,
-            UI.stack([pause,
-                      ActionButton("取消", symbol: "xmark", symbolColor: .systemRed, style: .toolbar) { [weak self] in self?.cancel() },
-                      ActionButton("完成截图", symbol: "checkmark", symbolColor: .systemGreen, style: .toolbar) { [weak self] in self?.finish() }], axis: .horizontal),
-        ], spacing: 8)
-        panel.contentView = UI.glassBar(controls, radius: 20, inset: 16)
-        if let screen = NSScreen.screens.first(where: {
+        guard let screen = NSScreen.screens.first(where: {
             ($0.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value == display.displayID
-        }) ?? NSScreen.main {
-            panel.setFrameOrigin(CGPoint(x: screen.visibleFrame.midX - 260, y: screen.visibleFrame.minY + 24))
-        }
+        }) ?? NSScreen.main else { return }
+        let selection = ScreenGeometry.quartzRect(fromAppKit: region, mainDisplayHeight: CGDisplayBounds(CGMainDisplayID()).height)
+        let panel = ScrollCapturePanel(selectionRect: selection, visibleFrame: screen.visibleFrame,
+                                       onPause: { [weak self] in self?.togglePause() },
+                                       onCancel: { [weak self] in self?.cancel() },
+                                       onFinish: { [weak self] in self?.finish() })
         panel.orderFrontRegardless()
         self.panel = panel
-        status.stringValue = "已记录第 1 帧 · 再按截图快捷键完成"
     }
 
     private func showOutline() {
@@ -115,30 +100,32 @@ final class ScrollCaptureSession {
                 guard !paused else { continue }
                 let result = await stitcher.ingest(image)
                 try Task.checkCancellation()
+                guard !paused else { continue }
                 switch result {
                 case .appended(let height, let frames):
                     frameCount = frames
-                    status.stringValue = "已拼接 \(frames) 帧 · 长图高度 \(height) px"
+                    panel?.update(state: .recording, message: "已拼接 \(frames) 帧 · 长图高度 \(height) px")
                 case .unchanged: break
-                case .rejected(let reason): status.stringValue = reason
+                case .rejected(let reason): panel?.update(state: .recording, message: reason)
                 case .limitReached:
                     paused = true
-                    pauseButton?.isEnabled = false
-                    status.stringValue = "已达到 30,000 px / 48 MP 上限，请完成截图。"
+                    panel?.update(state: .limitReached, message: "已达到 30,000 px / 48 MP 上限")
                 }
             } catch is CancellationError { return }
             catch {
+                guard !Task.isCancelled else { return }
                 paused = true
-                pauseButton?.title = "重试"
-                status.stringValue = "捕获暂停：\(error.localizedDescription)"
+                panel?.update(state: .retry, message: "捕获暂停：\(error.localizedDescription)")
             }
         }
     }
 
     private func togglePause() {
+        guard !finishing, !cancelled else { return }
         paused.toggle()
-        pauseButton?.title = paused ? "继续" : "暂停"
-        status.stringValue = paused ? "已暂停 · \(frameCount) 帧" : "继续向下滚动"
+        panel?.update(state: paused ? .paused : .recording,
+                      message: paused ? "已暂停 · \(frameCount) 帧" : "继续向下滚动 · 已记录 \(frameCount) 帧")
+        if !paused { startSampling() }
     }
 
     func finish() {
@@ -146,7 +133,7 @@ final class ScrollCaptureSession {
         guard !finishing else { return }
         finishing = true
         task?.cancel()
-        status.stringValue = "正在生成长图…"
+        panel?.update(state: .finishing, message: "正在生成长图…")
         Task { [weak self] in
             guard let self else { return }
             await task?.value
