@@ -71,6 +71,11 @@ struct InterfaceLayoutTests {
             store.checkForChanges()
         }
         let pins = PinsModule(pasteboard: pasteboard, showsWindows: false)
+        let image = screenshotFixture(size: CGSize(width: 240, height: 160))
+        let imageData = try #require(NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]))
+        pasteboard.clearContents()
+        pasteboard.setData(imageData, forType: .png)
+        store.checkForChanges()
         for record in try await store.page().records.prefix(2) { store.setPinned(record, pinned: true) }
         let controller = ClipboardPanelController(store: store, pins: pins)
         await controller.waitForReload()
@@ -80,7 +85,7 @@ struct InterfaceLayoutTests {
             let content = try #require(window.contentView)
             content.layoutSubtreeIfNeeded()
             let table = try #require(descendants(content).first { $0 is NSTableView } as? NSTableView)
-            #expect(table.numberOfRows == 6)
+            #expect(table.numberOfRows == 7)
             #expect(table.rowHeight == 58)
             let scroll = try #require(table.enclosingScrollView)
             #expect(scroll.frame.height >= 290)

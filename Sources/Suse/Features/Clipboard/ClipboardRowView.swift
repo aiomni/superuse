@@ -7,24 +7,33 @@ final class ClipboardRowView: NSTableCellView {
     private let icon = NSImageView()
     private let title = UI.label("", size: 13, weight: .medium)
     private let subtitle = UI.label("", size: 11, color: .secondaryLabelColor)
-    private let pinned = NSImageView(image: NSImage(systemSymbolName: "pin.fill", accessibilityDescription: "已置顶")!)
+    private let pinned = NSImageView(image: NSImage(systemSymbolName: "pin.circle.fill", accessibilityDescription: "已置顶")!)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         identifier = Self.reuseIdentifier
         icon.imageScaling = .scaleProportionallyUpOrDown
         icon.contentTintColor = .secondaryLabelColor
-        icon.widthAnchor.constraint(equalToConstant: 32).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        let contentIcon = NSView()
+        contentIcon.widthAnchor.constraint(equalToConstant: 32).isActive = true
+        contentIcon.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        contentIcon.addSubview(icon)
+        UI.pin(icon, to: contentIcon)
         title.maximumNumberOfLines = 2
         title.lineBreakMode = .byTruncatingTail
         let labels = UI.stack([title, subtitle], spacing: 3)
-        pinned.contentTintColor = .secondaryLabelColor
+        pinned.symbolConfiguration = NSImage.SymbolConfiguration(paletteColors: [.labelColor, .controlBackgroundColor])
         pinned.toolTip = "已置顶"
         pinned.setAccessibilityLabel("已置顶")
-        pinned.widthAnchor.constraint(equalToConstant: 14).isActive = true
-        pinned.heightAnchor.constraint(equalToConstant: 14).isActive = true
-        let content = UI.stack([icon, labels, pinned], axis: .horizontal, spacing: 10)
+        contentIcon.addSubview(pinned)
+        pinned.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            pinned.widthAnchor.constraint(equalToConstant: 16),
+            pinned.heightAnchor.constraint(equalToConstant: 16),
+            pinned.trailingAnchor.constraint(equalTo: contentIcon.trailingAnchor),
+            pinned.bottomAnchor.constraint(equalTo: contentIcon.bottomAnchor),
+        ])
+        let content = UI.stack([contentIcon, labels], axis: .horizontal, spacing: 10)
         labels.setContentHuggingPriority(.defaultLow, for: .horizontal)
         addSubview(content)
         UI.pin(content, to: self)
