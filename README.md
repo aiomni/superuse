@@ -23,6 +23,8 @@ superuse is a prototype. Stored data formats may change between builds without m
 
 Open superuse and use its toolbox or menu bar icon to choose an action. Closing the toolbox keeps the app available in the menu bar; use Quit to exit.
 
+The compact toolbox lists each action with its current shortcut. Click a row to open it, or use Up/Down to select and Return to open. Escape closes the toolbox.
+
 | Shortcut | Action |
 | --- | --- |
 | Control + Option + Space | Open the toolbox |

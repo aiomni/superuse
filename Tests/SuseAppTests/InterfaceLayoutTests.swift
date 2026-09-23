@@ -28,9 +28,22 @@ struct InterfaceLayoutTests {
             window.appearance = NSAppearance(named: appearance)
             let content = try #require(window.contentView)
             content.layoutSubtreeIfNeeded()
-            for section in descendants(content).compactMap({ $0 as? NSBox }) {
-                #expect(content.bounds.contains(content.convert(section.bounds, from: section)))
+            let commands = try #require(descendants(content).first { $0.accessibilityIdentifier() == "dashboard-commands" } as? NSTableView)
+            let commandScroll = try #require(commands.enclosingScrollView)
+            #expect(commands.numberOfRows == features.flatMap(\.commands).count)
+            #expect(content.frame.width <= 460 && content.frame.height < 300)
+            #expect(!descendants(content).contains { $0 is NSGlassEffectView })
+            #expect(content.bounds.contains(content.convert(commandScroll.bounds, from: commandScroll)))
+            var shortcutEdges: [CGFloat] = []
+            for row in 0..<commands.numberOfRows {
+                let cell = try #require(commands.view(atColumn: 0, row: row, makeIfNecessary: true))
+                cell.layoutSubtreeIfNeeded()
+                let shortcut = try #require(descendants(cell).first { $0.accessibilityIdentifier() == "dashboard-shortcut" })
+                let frame = cell.convert(shortcut.bounds, from: shortcut)
+                #expect(cell.bounds.contains(frame) && frame.maxX >= cell.bounds.maxX - 12)
+                shortcutEdges.append(commands.convert(shortcut.bounds, from: shortcut).maxX)
             }
+            #expect(shortcutEdges.allSatisfy { abs($0 - shortcutEdges[0]) < 1 })
             try render(window, named: "toolbox-\(name)")
             let settingsWindow = try #require(preferences.window)
             settingsWindow.appearance = NSAppearance(named: appearance)
@@ -181,10 +194,10 @@ struct InterfaceLayoutTests {
             })
             #expect(!status.isDescendant(of: container))
             #expect(controller.view.bounds.contains(controller.view.convert(status.bounds, from: status)))
-            let expectedAppearance: NSAppearance.Name = name.hasPrefix("contrast-") ? .accessibilityHighContrastDarkAqua : .darkAqua
-            // Recent AppKit versions resolve contrast names to the base appearance
-            // and apply the system accessibility setting during rendering.
-            #expect(container.effectiveAppearance.name == NSAppearance(named: expectedAppearance)?.name)
+            for control in [container, status] {
+                #expect(control.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) ==
+                        window.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]))
+            }
             try expectCompactImageTitleSpacing(complete)
             let palette = try #require(descendants(container).compactMap { $0 as? NSGlassEffectView }
                 .first { $0 !== mainBar })

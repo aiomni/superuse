@@ -164,7 +164,7 @@ private final class ActionSwitch: NSSwitch {
 
 @MainActor
 final class ActionButton: NSButton {
-    enum Style { case standard, glass, toolbar, accessoryBar }
+    enum Style { case standard, glass, accessoryBar }
     private var actionHandler: () -> Void
 
     init(_ title: String, symbol: String? = nil, symbolColor: NSColor? = nil,
@@ -178,10 +178,6 @@ final class ActionButton: NSButton {
         switch style {
         case .standard: bezelStyle = .automatic
         case .glass: bezelStyle = .glass
-        case .toolbar:
-            bezelStyle = .toolbar
-            isBordered = true
-            showsBorderOnlyWhileMouseInside = true
         case .accessoryBar:
             bezelStyle = .accessoryBarAction
             isBordered = true
@@ -205,7 +201,7 @@ final class ActionButton: NSButton {
     }
 
     convenience init(icon title: String, symbol: String, symbolColor: NSColor? = nil,
-                     style: Style = .toolbar, action: @escaping () -> Void) {
+                     style: Style = .accessoryBar, action: @escaping () -> Void) {
         self.init(title, symbol: symbol, symbolColor: symbolColor, style: style, action: action)
         imagePosition = .imageOnly
         toolTip = title

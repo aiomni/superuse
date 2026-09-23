@@ -6,14 +6,8 @@ enum CaptureReviewAction { case scroll, reselect, pinned, done }
 @MainActor
 private final class CaptureReviewView: NSView {
     var onCopy: (() -> Void)?
-    var onAppearanceChange: (() -> Void)?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-
-    override func viewDidChangeEffectiveAppearance() {
-        super.viewDidChangeEffectiveAppearance()
-        onAppearanceChange?()
-    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.keyCode == 8 && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift] {
@@ -62,7 +56,6 @@ final class CaptureReviewController: NSViewController {
     override func loadView() {
         let content = CaptureReviewView(frame: CGRect(origin: .zero, size: displaySize))
         content.onCopy = { [weak self] in self?.copyImage(completing: false) }
-        content.onAppearanceChange = { [weak self] in self?.updateControlAppearance() }
         view = content
         scroll.frame = selectionRect
         scroll.documentView = canvas
@@ -79,7 +72,6 @@ final class CaptureReviewController: NSViewController {
         view.addSubview(scroll)
         buildStatusBadge()
         buildToolbar()
-        updateControlAppearance()
     }
 
     private func buildToolbar() {
@@ -110,9 +102,6 @@ final class CaptureReviewController: NSViewController {
         ], axis: .horizontal, spacing: 16)
         let palette = UI.glassBar(makePalette(), inset: 8)
         let mainBar = UI.glassBar(actions, inset: 8)
-        // A dark tint keeps bright desktop content from washing out control labels.
-        palette.tintColor = .windowBackgroundColor
-        mainBar.tintColor = .windowBackgroundColor
         let content = UI.stack([palette, mainBar], spacing: 8)
         content.alignment = .trailing
         let container = UI.glassContainer(content)
@@ -136,20 +125,6 @@ final class CaptureReviewController: NSViewController {
         statusBadge.contentViewMargins = .zero
         statusBadge.contentView = UI.padded(status, inset: 6)
         view.addSubview(statusBadge)
-    }
-
-    private func updateControlAppearance() {
-        // Capture controls keep a dark, readable surface over arbitrary desktop content.
-        // Follow the parent's contrast setting without changing the captured image or sheets.
-        let contrastAppearances: [NSAppearance.Name] = [
-            .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua,
-            .accessibilityHighContrastVibrantLight, .accessibilityHighContrastVibrantDark,
-        ]
-        let highContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
-            || contrastAppearances.contains(view.effectiveAppearance.name)
-        let appearance = NSAppearance(named: highContrast ? .accessibilityHighContrastDarkAqua : .darkAqua)
-        toolbar?.appearance = appearance
-        statusBadge.appearance = appearance
     }
 
     private func positionStatusBadge() {
