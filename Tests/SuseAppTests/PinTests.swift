@@ -291,72 +291,85 @@ struct PinTests {
         #expect(service.resumptions == service.suspensions)
     }
 
-    @Test func clipboardPinUsesSelectedSnapshotWithoutCopyingOrRemovingIt() throws {
+    @Test func clipboardPinUsesSelectedSnapshotWithoutCopyingOrRemovingIt() async throws {
         _ = NSApplication.shared
         let suite = "app.suse.pin-tests.\(UUID().uuidString)"
         let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
         let pasteboard = NSPasteboard.withUniqueName()
-        defer { settings.defaults.removePersistentDomain(forName: suite); pasteboard.releaseGlobally() }
+        defer {
+            settings.defaults.removePersistentDomain(forName: suite)
+            pasteboard.releaseGlobally()
+            try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appending(path: suite))
+        }
         let store = ClipboardStore(settings: settings, pasteboard: pasteboard,
-                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.json"))
+                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite"))
         pasteboard.clearContents()
         pasteboard.setString("line 1\n    line 2", forType: .string)
         store.checkForChanges()
-        let entry = try #require(store.history.entries.first)
+        let entry = try #require(try await store.page().records.first)
         let pins = PinServiceDouble()
         let panel = ClipboardPanelController(store: store, pins: pins)
+        await panel.waitForReload()
         pasteboard.clearContents()
         pasteboard.setString("new clipboard", forType: .string)
         let changeCount = pasteboard.changeCount
         panel.pinSelected()
+        await panel.waitForAction()
         let request = try #require(pins.requests.first)
         #expect(request.source == .clipboard(entry.id))
         guard case .text(let text) = request.content else { Issue.record("Expected text"); return }
         #expect(text == "line 1\n    line 2")
-        #expect(store.history.entries == [entry])
+        #expect(try await store.page().records == [entry])
         #expect(pasteboard.changeCount == changeCount)
         pins.failure = AppError("Pin capacity")
         panel.pinSelected()
+        await panel.waitForAction()
         #expect(pins.requests.count == 1)
         #expect(descendants(try #require(panel.window?.contentView)).compactMap { $0 as? NSTextField }
             .contains { $0.stringValue.contains("Pin 失败") })
     }
 
-    @Test func historyEditingAndEvictionKeepSnapshotsWhileExplicitDeletionClosesThem() throws {
+    @Test func historyEditingAndEvictionKeepSnapshotsWhileExplicitDeletionClosesThem() async throws {
         _ = NSApplication.shared
         let suite = "app.suse.pin-tests.\(UUID().uuidString)"
         let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
         settings.defaults.set(1, forKey: "clipboard.limit")
         let pasteboard = NSPasteboard.withUniqueName()
-        defer { settings.defaults.removePersistentDomain(forName: suite); pasteboard.releaseGlobally() }
+        defer {
+            settings.defaults.removePersistentDomain(forName: suite)
+            pasteboard.releaseGlobally()
+            try? FileManager.default.removeItem(at: FileManager.default.temporaryDirectory.appending(path: suite))
+        }
         let store = ClipboardStore(settings: settings, pasteboard: pasteboard,
-                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.json"))
+                                   persistenceURL: FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite"))
         let pins = PinsModule(pasteboard: pasteboard, showsWindows: false)
         defer { pins.stop() }
         let module = ClipboardModule(settings: settings, pins: pins, store: store)
         pasteboard.clearContents()
         pasteboard.setString("original", forType: .string)
         store.checkForChanges()
-        let entry = try #require(store.history.entries.first)
+        let entry = try #require(try await store.page().records.first)
         try pins.pin(PinRequest(content: .text("original"), source: .clipboard(entry.id)))
         try pins.pin(PinRequest(content: .text("screenshot reference"), source: .screenshot))
         let pinned = try #require(pins.store.items.first)
         let editor = try #require(pins.controllers[pinned.id]?.textView)
         editor.insertText("pin notes", replacementRange: NSRange(location: 0, length: 8))
-        #expect(store.history.entries.first == entry)
-        #expect(store.edit(entry, text: "edited"))
+        #expect(try await store.page().records.first == entry)
+        #expect(await store.edit(entry, text: "edited"))
         pasteboard.clearContents()
         pasteboard.setString("new entry", forType: .string)
         store.checkForChanges()
-        #expect(store.history.entries.count == 1)
+        #expect(try await store.page().total == 1)
         #expect(pins.store.items.count == 2)
         guard case .text(let text) = try #require(pins.store.items.first).content else { Issue.record("Expected text"); return }
         #expect(text == "pin notes")
         store.remove(entry)
+        await store.flush()
         #expect(pins.store.items.map(\.source) == [.screenshot])
         try pins.pin(PinRequest(content: .text("another"), source: .clipboard(UUID())))
         let clear = try #require(descendants(module.makeSettingsView()).compactMap { $0 as? NSButton }.first { $0.title == "清空全部历史" })
         clear.performClick(nil)
+        await store.flush()
         #expect(pins.store.items.map(\.source) == [.screenshot])
     }
 

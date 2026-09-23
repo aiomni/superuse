@@ -17,12 +17,26 @@ public struct ClipboardEntry: Identifiable, Codable, Equatable, Sendable {
     public let content: ClipboardContent
     public let capturedAt: Date
     public let source: String
+    public let modifiedAt: Date
 
-    public init(id: UUID = UUID(), content: ClipboardContent, capturedAt: Date = Date(), source: String) {
+    public init(id: UUID = UUID(), content: ClipboardContent, capturedAt: Date = Date(), source: String,
+                modifiedAt: Date? = nil) {
         self.id = id
         self.content = content
         self.capturedAt = capturedAt
         self.source = source
+        self.modifiedAt = modifiedAt ?? capturedAt
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, content, capturedAt, source, modifiedAt }
+
+    public init(from decoder: any Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        content = try values.decode(ClipboardContent.self, forKey: .content)
+        capturedAt = try values.decode(Date.self, forKey: .capturedAt)
+        source = try values.decode(String.self, forKey: .source)
+        modifiedAt = try values.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? capturedAt
     }
 
     public var title: String {
@@ -40,49 +54,41 @@ public struct ClipboardEntry: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
-/// A bounded, most-recent-first history. All entry points preserve the same limits.
-public struct ClipboardHistory: Sendable {
-    public private(set) var entries: [ClipboardEntry] = []
-    public var countLimit: Int { didSet { trim() } }
-    public let byteLimit: Int
-    public let itemByteLimit: Int
+/// A list projection. Original text and image bytes are read only for an explicit content action.
+public struct ClipboardRecord: Identifiable, Equatable, Sendable {
+    public let id: UUID
+    public let isImage: Bool
+    public let title: String
+    public let source: String
+    public let capturedAt: Date
+    public let modifiedAt: Date
+    public let fingerprint: String
+    public let pinOrder: Int?
+    public let thumbnail: Data?
+    public var isPinned: Bool { pinOrder != nil }
 
-    public init(countLimit: Int = 100, byteLimit: Int = 32 * 1_024 * 1_024,
-                itemByteLimit: Int = 8 * 1_024 * 1_024) {
-        self.countLimit = countLimit
-        self.byteLimit = byteLimit
-        self.itemByteLimit = itemByteLimit
+    public init(id: UUID, isImage: Bool, title: String, source: String, capturedAt: Date, modifiedAt: Date,
+                fingerprint: String, pinOrder: Int? = nil, thumbnail: Data? = nil) {
+        self.id = id
+        self.isImage = isImage
+        self.title = title
+        self.source = source
+        self.capturedAt = capturedAt
+        self.modifiedAt = modifiedAt
+        self.fingerprint = fingerprint
+        self.pinOrder = pinOrder
+        self.thumbnail = thumbnail
     }
+}
 
-    @discardableResult
-    public mutating func insert(_ entry: ClipboardEntry) -> Bool {
-        guard entry.content.byteCount > 0, entry.content.byteCount <= itemByteLimit,
-              entry.content.byteCount <= byteLimit else { return false }
-        entries.removeAll { $0.content == entry.content || $0.id == entry.id }
-        entries.insert(entry, at: 0)
-        trim()
-        return true
-    }
+public struct ClipboardPage: Sendable {
+    public let records: [ClipboardRecord]
+    public let total: Int
+    public let offset: Int
 
-    @discardableResult
-    public mutating func edit(id: UUID, text: String) -> Bool {
-        guard let entry = entries.first(where: { $0.id == id }), case .text = entry.content else { return false }
-        return insert(ClipboardEntry(id: id, content: .text(text), capturedAt: entry.capturedAt, source: entry.source))
-    }
-
-    public mutating func remove(id: UUID) { entries.removeAll { $0.id == id } }
-    public mutating func removeAll() { entries.removeAll() }
-
-    public mutating func restore(_ saved: [ClipboardEntry]) {
-        entries.removeAll()
-        for entry in saved.reversed() { insert(entry) }
-    }
-
-    private mutating func trim() {
-        var bytes = 0
-        entries = Array(entries.prefix(max(0, countLimit)).prefix { entry in
-            bytes += entry.content.byteCount
-            return bytes <= byteLimit
-        })
+    public init(records: [ClipboardRecord], total: Int, offset: Int) {
+        self.records = records
+        self.total = total
+        self.offset = offset
     }
 }

@@ -8,8 +8,7 @@ final class SettingsStore {
         self.defaults = defaults
         defaults.register(defaults: [
             "clipboard.enabled": true,
-            "clipboard.limit": 100,
-            "clipboard.persist": false,
+            "clipboard.limit": 1000,
             "clipboard.ignoreSensitive": true,
             "screenshot.copyAfterCapture": true,
         ])

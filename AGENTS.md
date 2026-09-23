@@ -53,7 +53,7 @@ For behavior changes, add or update meaningful regression coverage and run affec
 - Keep command ID `screenshot.region` for saved shortcut compatibility. Defaults are ⇧⌘A for screenshots, ⌃⌥V for history, and ⌃⌥Space for the toolbox.
 - Screenshot selection freezes the desktop, distinguishes clicks from drags, and stays within one display. Review and annotations reuse the overlay. Preserve Retina pixel dimensions and coordinate handling for negative display origins.
 - Scrolling capture uses manual downward scrolling and is bounded to 30,000 pixels in height or 48 million pixels.
-- Clipboard recording and sensitive-marker filtering default to enabled; persistence defaults to disabled. Preserve the 100-entry default, 50/100/200 choices, 8 MiB item limit, and 32 MiB total across insertion, editing, and restoration.
+- Clipboard recording and sensitive-marker filtering default to enabled. History always persists locally in SQLite; migrate the legacy `Suse/clipboard-history.json` transactionally before removing it. Default retention is 1,000 ordinary entries, with user-entered positive counts and no product-imposed byte limits. List-pinned records are retained in addition to ordinary history. Keep list summaries paged and original content loaded on demand; do not restore an in-memory array of all content.
 - Pin supports images and plain text and is session-only, independent of clipboard persistence. Preserve its 16-window, 256 MiB content-memory, and 48 MP image limits. Pin must not implicitly copy content. Text Pins edit their own session snapshot, preserve native selection/undo/IME behavior, and enforce the shared content budget when replacing text (including empty text). History eviction/editing keeps snapshots; explicit deletion closes associated Pins. Screenshot capture suppression must restore each Pin's previous hidden state on success, failure, and cancellation, with a menu-bar recovery path for mouse click-through.
 - Login-item state comes from `SMAppService.mainApp`, not a stored toggle. Opening or refreshing settings must not register the app. `.notFound` allows an explicit registration attempt; errors restore the actual system state. Login launches suppress the toolbox, while manual launches show it.
 
@@ -88,7 +88,7 @@ This repository is public. Keep personal paths, private domains, real clipboard 
 
 Keep `.build/`, `.swiftpm/`, `dist/`, `.signing-identity.local`, local environment files, signing material, and logs ignored. Use placeholders in examples. Inspect staged content, including image metadata, before publishing; ignore rules do not remove information already tracked or present in history.
 
-Preserve opt-in local persistence, file mode `0600`, directory mode `0700`, and deletion of the saved file when persistence is disabled. History is not encrypted by the app. Retain sensitive-marker filtering and app exclusions without claiming they detect every secret.
+Preserve file mode `0600` and directory mode `0700` for local history. History is always saved and is not encrypted by the app. Pausing recording stops new collection without deleting existing history. Retain sensitive-marker filtering and app exclusions without claiming they detect every secret.
 
 Respect macOS screen recording, clipboard, and Accessibility permissions. Direct paste must retain focus, modifier-release, and pasteboard-change checks, with manual-copy fallback on failure.
 

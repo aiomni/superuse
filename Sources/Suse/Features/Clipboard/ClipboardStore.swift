@@ -1,47 +1,21 @@
 import AppKit
 import SuseCore
 
-private actor ClipboardDisk {
-    private var lastRevision = -1
-    private let url: URL
-    init(url: URL) { self.url = url }
-
-    func load() throws -> [ClipboardEntry] {
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        // JSON can expand a control character to six bytes; accept every valid bounded history.
-        guard size <= 196 * 1_024 * 1_024 else { throw AppError("剪贴板历史文件过大，已跳过加载。") }
-        return try JSONDecoder().decode([ClipboardEntry].self, from: Data(contentsOf: url))
-    }
-
-    func save(_ entries: [ClipboardEntry]?, revision: Int) throws {
-        guard revision > lastRevision else { return }
-        lastRevision = revision
-        if let entries {
-            try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true,
-                                                    attributes: [.posixPermissions: 0o700])
-            try JSONEncoder().encode(entries).write(to: url, options: .atomic)
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
-        } else if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
-        }
-    }
-}
-
 @MainActor
 final class ClipboardStore {
     private let settings: SettingsStore
     private let pasteboard: NSPasteboard
     private let disk: ClipboardDisk
     private var timer: Timer?
-    private var saveTask: Task<Void, Never>?
+    private var writeTask: Task<Void, Never>?
     private var startTask: Task<Void, Never>?
     private var lastChange: Int
-    private var revision = 0
-    private(set) var history: ClipboardHistory
     private(set) var persistenceError: String?
     var onChange: (() -> Void)?
     var onExplicitRemoval: ((UUID?) -> Void)?
+
+    var countLimit: Int { max(1, settings.defaults.integer(forKey: "clipboard.limit")) }
+    var pasteboardChangeCount: Int { pasteboard.changeCount }
 
     var accessNotice: String? {
         switch pasteboard.accessBehavior {
@@ -53,44 +27,54 @@ final class ClipboardStore {
     }
 
     init(settings: SettingsStore, pasteboard: NSPasteboard = .general,
-         persistenceURL: URL = URL.applicationSupportDirectory.appending(path: "Suse/clipboard-history.json")) {
+         persistenceURL: URL = URL.applicationSupportDirectory.appending(path: "Suse/clipboard-history.sqlite")) {
         self.settings = settings
         self.pasteboard = pasteboard
         disk = ClipboardDisk(url: persistenceURL)
         lastChange = pasteboard.changeCount
-        history = ClipboardHistory(countLimit: settings.defaults.integer(forKey: "clipboard.limit"))
     }
 
     func start() {
+        guard startTask == nil else { return }
+        let limit = countLimit
+        let preparation = enqueue { try await $0.prepare(limit: limit) }
         startTask = Task { [weak self] in
-            guard let self else { return }
-            if settings.defaults.bool(forKey: "clipboard.persist") {
-                let startingRevision = revision
-                do {
-                    let saved = try await disk.load()
-                    if !Task.isCancelled, startingRevision == revision,
-                       settings.defaults.bool(forKey: "clipboard.persist") { history.restore(saved) }
-                }
-                catch { persistenceError = error.localizedDescription }
-            } else {
-                do { try await disk.save(nil, revision: revision) }
-                catch { persistenceError = error.localizedDescription }
-            }
-            guard !Task.isCancelled else { return }
-            onChange?()
+            _ = await preparation.value
+            guard let self, !Task.isCancelled else { return }
             timer = Timer.scheduledTimer(withTimeInterval: 0.6, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.checkForChanges() }
             }
         }
     }
 
-    func stop() { timer?.invalidate(); timer = nil; startTask?.cancel() }
-    func flush() async { await saveTask?.value }
+    func stop() {
+        timer?.invalidate()
+        timer = nil
+        startTask?.cancel()
+        startTask = nil
+    }
 
-    func settingsChanged() {
-        history.countLimit = settings.defaults.integer(forKey: "clipboard.limit")
-        lastChange = pasteboard.changeCount
-        changed()
+    /// Accepted writes are never cancelled by a panel closing or by application shutdown.
+    func flush() async { await writeTask?.value }
+
+    func settingsChanged() { lastChange = pasteboard.changeCount; onChange?() }
+
+    func page(query: String = "", offset: Int = 0, limit: Int = 100) async throws -> ClipboardPage {
+        await flush()
+        try Task.checkCancellation()
+        return try await disk.page(query: query, offset: offset, limit: limit)
+    }
+
+    func index(of id: UUID, query: String) async throws -> Int? {
+        await flush()
+        try Task.checkCancellation()
+        return try await disk.index(of: id, query: query)
+    }
+
+    func content(for record: ClipboardRecord) async throws -> ClipboardEntry {
+        await flush()
+        try Task.checkCancellation()
+        return try await disk.content(for: record)
     }
 
     func checkForChanges() {
@@ -108,19 +92,23 @@ final class ClipboardStore {
             guard !(pasteboard.types ?? []).contains(where: { sensitive.contains($0.rawValue) }) else { return }
         }
         let content: ClipboardContent
+        var convertImage = false
         if let text = pasteboard.string(forType: .string), !text.isEmpty {
             content = .text(text)
-        } else if let data = pasteboard.data(forType: .png), data.count <= history.itemByteLimit {
+        } else if let data = pasteboard.data(forType: .png), !data.isEmpty {
             content = .image(data)
-        } else if let data = pasteboard.data(forType: .tiff), data.count <= history.itemByteLimit,
-                  let representation = NSBitmapImageRep(data: data),
-                  let png = representation.representation(using: .png, properties: [:]) {
-            content = .image(png)
+        } else if let data = pasteboard.data(forType: .tiff), !data.isEmpty {
+            content = .image(data)
+            convertImage = true
         } else { return }
-        if history.insert(ClipboardEntry(content: content, source: source?.localizedName ?? "未知应用")) { changed() }
+        let entry = ClipboardEntry(content: content, source: source?.localizedName ?? "未知应用")
+        let limit = countLimit
+        let needsConversion = convertImage
+        enqueue { try await $0.capture(entry, limit: limit, convertImage: needsConversion) }
     }
 
-    func copy(_ entry: ClipboardEntry) -> Bool {
+    func copy(_ entry: ClipboardEntry, expectedChangeCount: Int? = nil) -> Bool {
+        if let expectedChangeCount, pasteboard.changeCount != expectedChangeCount { return false }
         pasteboard.clearContents()
         let success: Bool
         switch entry.content {
@@ -131,41 +119,49 @@ final class ClipboardStore {
         return success
     }
 
-    func edit(_ entry: ClipboardEntry, text: String) -> Bool {
-        guard history.edit(id: entry.id, text: text) else { return false }
-        changed()
-        return true
+    func edit(_ record: ClipboardRecord, text: String) async -> Bool {
+        let limit = countLimit
+        return await enqueue { try await $0.edit(record, text: text, limit: limit) }.value
     }
 
-    func remove(_ entry: ClipboardEntry) {
-        history.remove(id: entry.id)
-        onExplicitRemoval?(entry.id)
-        changed()
+    func remove(_ record: ClipboardRecord) {
+        enqueue({ try await $0.remove(id: record.id) }, completion: { [weak self] in self?.onExplicitRemoval?(record.id) })
     }
+
     func clear() {
-        history.removeAll()
-        onExplicitRemoval?(nil)
-        changed()
+        enqueue({ try await $0.clear() }, completion: { [weak self] in self?.onExplicitRemoval?(nil) })
     }
 
-    private func changed() {
-        onChange?()
-        revision += 1
-        let version = revision
-        let snapshot = settings.defaults.bool(forKey: "clipboard.persist") ? history.entries : nil
-        saveTask?.cancel()
-        saveTask = Task { [weak self, disk] in
+    func setLimit(_ limit: Int) async -> Bool {
+        await enqueue({ try await $0.setLimit(limit) }, completion: { [weak self] in
+            self?.settings.defaults.set(limit, forKey: "clipboard.limit")
+        }).value
+    }
+
+    func counts() async throws -> (pinned: Int, ordinary: Int) {
+        await flush()
+        return try await disk.counts()
+    }
+
+    @discardableResult
+    private func enqueue<T: Sendable>(_ operation: @escaping @Sendable (ClipboardDisk) async throws -> T,
+                                      completion: (@MainActor () -> Void)? = nil) -> Task<Bool, Never> {
+        let preceding = writeTask
+        let task = Task { [weak self, disk] in
+            await preceding?.value
             do {
-                // Coalesce rapid clipboard changes, keeping disk operations ordered by revision.
-                if snapshot != nil { try await Task.sleep(for: .milliseconds(250)) }
-                try Task.checkCancellation()
-                try await disk.save(snapshot, revision: version)
+                _ = try await operation(disk)
                 self?.persistenceError = nil
-            } catch is CancellationError { }
-            catch {
+                completion?()
+                self?.onChange?()
+                return true
+            } catch {
                 self?.persistenceError = error.localizedDescription
                 self?.onChange?()
+                return false
             }
         }
+        writeTask = Task { _ = await task.value }
+        return task
     }
 }

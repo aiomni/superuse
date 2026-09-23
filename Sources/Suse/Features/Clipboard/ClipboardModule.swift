@@ -36,15 +36,14 @@ final class ClipboardModule: FeatureModule {
                 self?.store.settingsChanged()
             }
         }
-        let limit = NSSegmentedControl(labels: ["50 条", "100 条", "200 条"], trackingMode: .selectOne, target: self, action: #selector(limitChanged(_:)))
-        limit.selectedSegment = [50, 100, 200].firstIndex(of: defaults.integer(forKey: "clipboard.limit")) ?? 1
+        let limit = NSSegmentedControl(labels: ["50 条", "100 条", "200 条", "1000 条"], trackingMode: .selectOne, target: self, action: #selector(limitChanged(_:)))
+        limit.selectedSegment = [50, 100, 200, 1000].firstIndex(of: defaults.integer(forKey: "clipboard.limit")) ?? 3
         let exclusions = NSTextField(string: defaults.string(forKey: "clipboard.excludedApps") ?? "")
         exclusions.placeholderString = "com.example.passwordmanager, com.example.private"
         exclusions.target = self
         exclusions.action = #selector(exclusionsChanged(_:))
         let recording = UI.groupedRows([
             toggle("记录剪贴板历史", key: "clipboard.enabled"),
-            toggle("重启后保留历史", subtitle: "存储到本机磁盘。", key: "clipboard.persist"),
             toggle("忽略敏感内容", subtitle: "跳过密码管理器等应用标记的内容。", key: "clipboard.ignoreSensitive"),
             UI.row(UI.label("最多保留"), limit),
         ])
@@ -58,13 +57,13 @@ final class ClipboardModule: FeatureModule {
             UI.section(UI.row(ActionButton("系统剪贴板访问设置", symbol: "lock.shield") {
                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security")!)
             }, ActionButton("清空全部历史", symbol: "trash") { [weak self] in self?.store.clear() })),
-            UI.label("↑↓ 选择，Return 复制，⌘Return 粘贴到唤起前的应用，⌘E 编辑，⌘P Pin，⌘Delete 删除。\n主动删除历史时会关闭相关 Pin。支持文本与图片；单条上限 8 MB，总计上限 32 MB。敏感标记由来源应用提供，无法识别所有秘密内容。", size: 12, color: .secondaryLabelColor),
+            UI.label("↑↓ 选择，Return 复制，⌘Return 粘贴到唤起前的应用，⌘E 编辑，⌘P Pin，⌘Delete 删除。\n主动删除历史时会关闭相关 Pin。支持文本与图片，历史自动保存在本机。敏感标记由来源应用提供，无法识别所有秘密内容。", size: 12, color: .secondaryLabelColor),
         ])
     }
 
     @objc private func limitChanged(_ sender: NSSegmentedControl) {
-        settings.defaults.set([50, 100, 200][sender.selectedSegment], forKey: "clipboard.limit")
-        store.settingsChanged()
+        let limit = [50, 100, 200, 1000][sender.selectedSegment]
+        Task { await store.setLimit(limit) }
     }
 
     @objc private func exclusionsChanged(_ sender: NSTextField) {

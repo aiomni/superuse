@@ -11,7 +11,7 @@ struct NativeIntegrationTests {
         let suite = "app.suse.tests.\(UUID().uuidString)"
         let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
         let pasteboard = NSPasteboard.withUniqueName()
-        let path = FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.json")
+        let path = FileManager.default.temporaryDirectory.appending(path: "\(suite)/history.sqlite")
         return (ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: path), settings, pasteboard, path, suite)
     }
 
@@ -25,51 +25,52 @@ struct NativeIntegrationTests {
         pasteboard.clearContents()
         pasteboard.setString("first", forType: .string)
         store.checkForChanges()
-        let entry = try #require(store.history.entries.first)
-        #expect(entry.content == .text("first"))
-        #expect(store.edit(entry, text: "edited"))
-        let edited = try #require(store.history.entries.first)
-        #expect(store.copy(edited))
+        let entry = try #require(try await store.page().records.first)
+        #expect(try await store.content(for: entry).content == .text("first"))
+        #expect(await store.edit(entry, text: "edited"))
+        let edited = try #require(try await store.page().records.first)
+        #expect(store.copy(try await store.content(for: edited)))
         #expect(pasteboard.string(forType: .string) == "edited")
         store.checkForChanges()
-        #expect(store.history.entries.count == 1)
+        #expect(try await store.page().total == 1)
 
         pasteboard.clearContents()
         pasteboard.setString("sensitive", forType: .string)
         pasteboard.setData(Data(), forType: .init("org.nspasteboard.ConcealedType"))
         store.checkForChanges()
-        #expect(store.history.entries.count == 1)
+        #expect(try await store.page().total == 1)
         settings.defaults.set(false, forKey: "clipboard.enabled")
         pasteboard.clearContents()
         pasteboard.setString("paused", forType: .string)
         store.checkForChanges()
-        #expect(store.history.entries.count == 1)
+        #expect(try await store.page().total == 1)
         await store.flush()
-        #expect(!FileManager.default.fileExists(atPath: path.path))
+        #expect(FileManager.default.fileExists(atPath: path.path))
     }
 
-    @Test func persistenceIsOptInAndDisablingRemovesDiskHistory() async throws {
+    @Test func historyPersistsAcrossRestartEvenWithLegacyPersistenceDisabled() async throws {
         let (store, settings, pasteboard, path, suite) = isolatedStore()
         defer {
             settings.defaults.removePersistentDomain(forName: suite)
             pasteboard.releaseGlobally()
             try? FileManager.default.removeItem(at: path.deletingLastPathComponent())
         }
-        settings.defaults.set(true, forKey: "clipboard.persist")
+        settings.defaults.set(false, forKey: "clipboard.persist")
         pasteboard.clearContents()
         pasteboard.setString("local history", forType: .string)
         store.checkForChanges()
         await store.flush()
         try #require(store.persistenceError == nil)
-        let saved = try JSONDecoder().decode([ClipboardEntry].self, from: Data(contentsOf: path))
-        #expect(saved.first?.content == .text("local history"))
+        let reopened = ClipboardStore(settings: settings, pasteboard: pasteboard, persistenceURL: path)
+        let saved = try #require(try await reopened.page().records.first)
+        #expect(try await reopened.content(for: saved).content == .text("local history"))
         let attributes = try FileManager.default.attributesOfItem(atPath: path.path)
         #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
-        settings.defaults.set(false, forKey: "clipboard.persist")
+        settings.defaults.set(false, forKey: "clipboard.enabled")
         store.settingsChanged()
         await store.flush()
-        #expect(!FileManager.default.fileExists(atPath: path.path))
-        #expect(store.history.entries.count == 1)
+        #expect(FileManager.default.fileExists(atPath: path.path))
+        #expect(try await store.page().total == 1)
     }
 
     @Test func annotationExportPreservesOrientationAndUndo() throws {

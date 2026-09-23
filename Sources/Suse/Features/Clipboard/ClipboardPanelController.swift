@@ -23,12 +23,16 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     private let searchItem = NSSearchToolbarItem(itemIdentifier: .init("clipboard.search"))
     private let emptyState = UI.label("还没有剪贴板记录\n复制一段文字或图片，它会出现在这里。", size: 14, color: .secondaryLabelColor)
     private let status = UI.label("", size: 11, color: .secondaryLabelColor)
-    private var visibleEntries: [ClipboardEntry] = []
+    private let list: ClipboardListModel
+    private var selectedEntry: ClipboardRecord?
+    private var reloadTask: Task<Void, Never>?
+    private var actionTask: Task<Void, Never>?
     private var sourceApplication: NSRunningApplication?
     private var pasteTask: Task<Void, Never>?
 
     init(store: ClipboardStore, pins: (any PinPresenting)? = nil) {
         self.store = store
+        list = ClipboardListModel(store: store)
         self.pins = pins
         let panel = HistoryPanel(contentRect: NSRect(x: 0, y: 0, width: 620, height: 490),
                                  styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
@@ -44,12 +48,18 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         panel.handleKey = { [weak self] in self?.handleKey($0) ?? false }
         build()
         store.onChange = { [weak self] in self?.reload() }
+        list.onPageLoaded = { [weak self] range in
+            guard let self else { return }
+            table.reloadData(forRowIndexes: IndexSet(integersIn: range), columnIndexes: IndexSet(integer: 0))
+            updateSelection()
+        }
+        list.onError = { [weak self] in self?.showStorageError($0) }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
     func toggle() {
-        if window?.isVisible == true { window?.orderOut(nil); return }
+        if window?.isVisible == true { hide(); return }
         pasteTask?.cancel()
         sourceApplication = NSWorkspace.shared.frontmostApplication
         search.stringValue = ""
@@ -61,7 +71,7 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        if window?.attachedSheet == nil { window?.orderOut(nil) }
+        if window?.attachedSheet == nil { hide() }
     }
 
     private func build() {
@@ -146,54 +156,81 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         itemIdentifier == searchItem.itemIdentifier ? searchItem : nil
     }
 
-    private var selectedEntry: ClipboardEntry? {
-        visibleEntries.indices.contains(table.selectedRow) ? visibleEntries[table.selectedRow] : nil
-    }
-
     private func reload() {
+        reloadTask?.cancel()
+        let query = search.stringValue
         let selectedID = selectedEntry?.id
-        visibleEntries = store.history.entries.filter { $0.matches(search.stringValue) }
-        table.reloadData()
-        emptyState.isHidden = !visibleEntries.isEmpty
-        emptyState.stringValue = search.stringValue.isEmpty ? "还没有剪贴板记录\n复制一段文字或图片，它会出现在这里。" : "没有匹配的内容"
-        if !visibleEntries.isEmpty {
-            let index = visibleEntries.firstIndex(where: { $0.id == selectedID }) ?? 0
-            table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
+        reloadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let selectedRow = try await list.refresh(query: query, selectedID: selectedID)
+                try Task.checkCancellation()
+                table.reloadData()
+                emptyState.isHidden = list.total > 0
+                emptyState.stringValue = query.isEmpty ? "还没有剪贴板记录\n复制一段文字或图片，它会出现在这里。" : "没有匹配的内容"
+                if let selectedRow {
+                    table.selectRowIndexes(IndexSet(integer: selectedRow), byExtendingSelection: false)
+                } else {
+                    table.deselectAll(nil)
+                }
+                updateSelection()
+                updateStatus()
+            } catch is CancellationError { }
+            catch { showStorageError(error) }
         }
-        status.stringValue = "\(visibleEntries.count) 条记录  ·  ↑↓ 选择  ·  ↩ 复制  ·  ⌘↩ 粘贴  ·  ⌘E 编辑  ·  ⌘P Pin"
-        if let notice = store.accessNotice { status.stringValue = notice }
-        if let error = store.persistenceError { status.stringValue = "历史保存失败：\(error)" }
     }
 
-    func controlTextDidChange(_ notification: Notification) { reload() }
-    func numberOfRows(in tableView: NSTableView) -> Int { visibleEntries.count }
+    /// Used by layout and integration checks to await the same asynchronous path as the UI.
+    func waitForReload() async { await store.flush(); await reloadTask?.value }
+    func waitForAction() async { await actionTask?.value }
+
+    private func updateStatus() {
+        status.stringValue = "\(list.total) 条记录  ·  ↑↓ 选择  ·  ↩ 复制  ·  ⌘↩ 粘贴  ·  ⌘E 编辑  ·  ⌘P Pin"
+        if let notice = store.accessNotice { status.stringValue = notice }
+        if let error = store.persistenceError { status.stringValue = "历史存储失败：\(error)" }
+    }
+
+    private func showStorageError(_ error: Error) {
+        status.stringValue = "历史读取失败：\(error.localizedDescription)"
+        status.toolTip = error.localizedDescription
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+        actionTask?.cancel()
+        selectedEntry = nil
+        reload()
+    }
+
+    func numberOfRows(in tableView: NSTableView) -> Int { list.total }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        let entry = visibleEntries[row]
-        let image: NSImage
-        if case .image(let data) = entry.content { image = ImageThumbnail.make(from: data) ?? NSImage() }
-        else { image = NSImage(systemSymbolName: "text.alignleft", accessibilityDescription: "文本")! }
-        let icon = NSImageView(image: image)
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.contentTintColor = .secondaryLabelColor
-        icon.widthAnchor.constraint(equalToConstant: 32).isActive = true
-        icon.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        let title = UI.label(entry.title.isEmpty ? "空白文本" : entry.title, size: 13, weight: .medium)
-        title.maximumNumberOfLines = 2
-        title.lineBreakMode = .byTruncatingTail
-        let subtitle = UI.label("\(entry.source) · \(entry.capturedAt.formatted(date: .omitted, time: .shortened))", size: 11, color: .secondaryLabelColor)
-        let rowView = UI.stack([icon, UI.stack([title, subtitle], spacing: 3)], axis: .horizontal, spacing: 10)
-        rowView.setAccessibilityLabel("\(entry.title)，来自 \(entry.source)")
-        return rowView
+        let cell = tableView.makeView(withIdentifier: ClipboardRowView.reuseIdentifier, owner: self) as? ClipboardRowView
+            ?? ClipboardRowView()
+        cell.configure(with: list.record(at: row))
+        return cell
+    }
+
+    func tableViewSelectionDidChange(_ notification: Notification) { updateSelection() }
+
+    private func updateSelection() {
+        let record = list.record(at: table.selectedRow)
+        if record?.id != selectedEntry?.id { actionTask?.cancel() }
+        selectedEntry = record
+    }
+
+    private func hide() {
+        actionTask?.cancel()
+        pasteTask?.cancel()
+        window?.orderOut(nil)
     }
 
     private func handleKey(_ event: NSEvent) -> Bool {
         let command = event.modifierFlags.contains(.command)
         switch event.keyCode {
-        case 53: window?.orderOut(nil)
+        case 53: hide()
         case 125, 126:
-            guard !visibleEntries.isEmpty else { return true }
-            let index = min(max(table.selectedRow + (event.keyCode == 125 ? 1 : -1), 0), visibleEntries.count - 1)
+            guard list.total > 0 else { return true }
+            let index = min(max(table.selectedRow + (event.keyCode == 125 ? 1 : -1), 0), list.total - 1)
             table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false)
             table.scrollRowToVisible(index)
         case 36, 76: commit(paste: command)
@@ -210,51 +247,82 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
     @objc private func copySelected() { commit(paste: false) }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.items.first?.isEnabled = pins != nil && visibleEntries.indices.contains(table.clickedRow)
+        menu.items.first?.isEnabled = pins != nil && list.record(at: table.clickedRow) != nil
     }
 
     @objc private func pinFromContextMenu() {
-        guard visibleEntries.indices.contains(table.clickedRow) else { return }
+        guard list.record(at: table.clickedRow) != nil else { return }
         table.selectRowIndexes(IndexSet(integer: table.clickedRow), byExtendingSelection: false)
         pinSelected()
     }
 
     func pinSelected() {
-        guard let entry = selectedEntry, let pins else { NSSound.beep(); return }
-        let content: PinRequest.Content
-        switch entry.content {
-        case .text(let text): content = .text(text)
-        case .image(let data): content = .imageData(data, scale: window?.screen?.backingScaleFactor ?? 1)
-        }
-        do {
-            try pins.pin(PinRequest(content: content, source: .clipboard(entry.id)))
-            window?.orderOut(nil)
-            sourceApplication?.activate()
-        } catch {
-            status.stringValue = "Pin 失败：\(error.localizedDescription)"
-            status.toolTip = error.localizedDescription
+        guard let pins else { NSSound.beep(); return }
+        loadSelected { [weak self] entry, _ in
+            guard let self else { return }
+            let content: PinRequest.Content
+            switch entry.content {
+            case .text(let text): content = .text(text)
+            case .image(let data): content = .imageData(data, scale: window?.screen?.backingScaleFactor ?? 1)
+            }
+            do {
+                try pins.pin(PinRequest(content: content, source: .clipboard(entry.id)))
+                window?.orderOut(nil)
+                sourceApplication?.activate()
+            } catch {
+                status.stringValue = "Pin 失败：\(error.localizedDescription)"
+                status.toolTip = error.localizedDescription
+            }
         }
     }
 
     private func commit(paste: Bool) {
-        guard let entry = selectedEntry else { NSSound.beep(); return }
-        guard store.copy(entry) else { UI.error(AppError("系统剪贴板写入失败，请重试。"), in: window); return }
-        window?.orderOut(nil)
-        guard paste else { return }
+        let expectedChangeCount = store.pasteboardChangeCount
         let destination = sourceApplication
-        let expectedChangeCount = NSPasteboard.general.changeCount
-        pasteTask = Task { [weak self] in
+        loadSelected { [weak self] entry, _ in
             guard let self else { return }
-            do { try await pasteService.paste(to: destination, expectedChangeCount: expectedChangeCount) }
-            catch is CancellationError { }
-            catch { UI.error(error) }
+            guard store.copy(entry, expectedChangeCount: expectedChangeCount) else {
+                UI.error(AppError("剪贴板已改变或写入失败，请重新选择后复制。"), in: window)
+                return
+            }
+            window?.orderOut(nil)
+            guard paste else { return }
+            let writtenChangeCount = store.pasteboardChangeCount
+            pasteTask = Task { [weak self] in
+                guard let self else { return }
+                do { try await pasteService.paste(to: destination, expectedChangeCount: writtenChangeCount) }
+                catch is CancellationError { }
+                catch { UI.error(error) }
+            }
+        }
+    }
+
+    private func loadSelected(_ action: @escaping @MainActor (ClipboardEntry, ClipboardRecord) -> Void) {
+        guard let record = selectedEntry else { NSSound.beep(); return }
+        actionTask?.cancel()
+        status.stringValue = "正在读取内容…"
+        actionTask = Task { [weak self, store] in
+            do {
+                let entry = try await store.content(for: record)
+                try Task.checkCancellation()
+                guard let self, selectedEntry?.id == record.id else { return }
+                updateStatus()
+                action(entry, record)
+            } catch is CancellationError { }
+            catch { self?.showStorageError(error) }
         }
     }
 
     private func editSelected() {
-        guard let entry = selectedEntry, case .text(let text) = entry.content, let parent = window else {
-            NSSound.beep(); return
+        guard selectedEntry?.isImage == false else { NSSound.beep(); return }
+        loadSelected { [weak self] entry, record in
+            guard let self, case .text(let text) = entry.content else { return }
+            presentEditor(text: text, record: record)
         }
+    }
+
+    private func presentEditor(text: String, record: ClipboardRecord) {
+        guard let parent = window else { return }
         let sheet = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 550, height: 380),
                              styleMask: [.titled], backing: .buffered, defer: false)
         sheet.title = "编辑历史内容"
@@ -276,10 +344,12 @@ final class ClipboardPanelController: NSWindowController, NSTableViewDataSource,
         editor.textContainer?.widthTracksTextView = true
         let save = ActionButton("保存") { [weak self] in
             guard let self else { return }
-            guard store.edit(entry, text: editor.string) else {
-                UI.error(AppError("内容不能为空，且不能超过 8 MB。"), in: sheet); return
+            let text = editor.string
+            guard !text.isEmpty else { UI.error(AppError("文本内容不能为空。"), in: sheet); return }
+            Task {
+                if await store.edit(record, text: text) { parent.endSheet(sheet) }
+                else { UI.error(AppError(store.persistenceError ?? "保存失败，请重试。"), in: sheet) }
             }
-            parent.endSheet(sheet)
         }
         save.keyEquivalent = "\r"
         save.keyEquivalentModifierMask = [.command]
