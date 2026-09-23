@@ -1,4 +1,7 @@
 import Foundation
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 import Testing
 import SuseCore
 @testable import Suse
@@ -8,43 +11,56 @@ struct ClipboardDiskTests {
         FileManager.default.temporaryDirectory.appending(path: "clipboard-tests-\(UUID())/history.sqlite")
     }
 
-    @Test func legacyMigrationPreservesContentIdentityAndPrivatePermissions() async throws {
+    @Test func textAndImagesRoundTripWithPrivateFilePermissions() async throws {
         let url = location()
         let directory = url.deletingLastPathComponent()
         defer { try? FileManager.default.removeItem(at: directory) }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-        let legacy = url.deletingPathExtension().appendingPathExtension("json")
-        let entry = ClipboardEntry(content: .text("migration\nfixture"), capturedAt: Date(timeIntervalSince1970: 100), source: "Fixture")
-        try JSONEncoder().encode([entry, entry]).write(to: legacy)
+        let entry = ClipboardEntry(content: .text("stored\nfixture"), capturedAt: Date(timeIntervalSince1970: 100), source: "Fixture")
+        let image = ClipboardEntry(content: .image(try imageData()), capturedAt: Date(timeIntervalSince1970: 200), source: "Fixture")
         let disk = ClipboardDisk(url: url)
-        try await disk.prepare(limit: 1000)
-        let record = try #require(try await disk.page().records.first)
-        #expect(record.id == entry.id)
-        #expect(try await disk.content(for: record) == entry)
-        #expect(!FileManager.default.fileExists(atPath: legacy.path))
+        try await disk.capture(entry, limit: 1000)
+        try await disk.capture(image, limit: 1000)
+        let page = try await disk.page()
+        let textRecord = try #require(page.records.first { $0.id == entry.id })
+        let imageRecord = try #require(page.records.first { $0.id == image.id })
+        #expect(try await disk.content(for: textRecord) == entry)
+        #expect(try await disk.content(for: imageRecord) == image)
+        #expect(imageRecord.thumbnail != nil)
         let restarted = ClipboardDisk(url: url)
-        #expect(try await restarted.page().total == 1)
-        #expect(try await restarted.content(for: record) == entry)
+        #expect(try await restarted.page().total == 2)
+        #expect(try await restarted.content(for: textRecord) == entry)
+        #expect(try await restarted.content(for: imageRecord) == image)
         for (path, mode) in [(url, 0o600), (directory, 0o700)] {
             let permissions = try FileManager.default.attributesOfItem(atPath: path.path)[.posixPermissions] as? NSNumber
             #expect(permissions?.intValue == mode)
         }
     }
 
-    @Test func failedMigrationLeavesLegacyDataAvailableForRetry() async throws {
+    @Test func invalidDatabaseIsNotOverwrittenAndOpeningCanBeRetried() async throws {
         let url = location()
         defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let legacy = url.deletingPathExtension().appendingPathExtension("json")
-        let invalid = Data("[unfinished".utf8)
-        try invalid.write(to: legacy)
+        let invalid = Data("not a database".utf8)
+        try invalid.write(to: url)
         let disk = ClipboardDisk(url: url)
         await #expect(throws: (any Error).self) { try await disk.prepare(limit: 1000) }
-        #expect(try Data(contentsOf: legacy) == invalid)
-        let recovered = ClipboardEntry(content: .text("recovered"), source: "Fixture")
-        try JSONEncoder().encode([recovered]).write(to: legacy)
-        try await disk.prepare(limit: 1000)
+        #expect(try Data(contentsOf: url) == invalid)
+        try Data().write(to: url)
+        try await disk.capture(.init(content: .text("recovered"), source: "Fixture"), limit: 1000)
         #expect(try await disk.page().total == 1)
+    }
+
+    private func imageData() throws -> Data {
+        let context = try #require(CGContext(data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 16,
+                                             space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 0.8, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        let image = try #require(context.makeImage())
+        let data = NSMutableData()
+        let destination = try #require(CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        try #require(CGImageDestinationFinalize(destination))
+        return data as Data
     }
 
     @Test func recaptureAndEditKeepIdentityAndRejectStaleContentActions() async throws {
@@ -53,12 +69,16 @@ struct ClipboardDiskTests {
         let disk = ClipboardDisk(url: url)
         let first = ClipboardEntry(content: .text("first"), capturedAt: Date(timeIntervalSince1970: 1), source: "Fixture")
         try await disk.capture(first, limit: 2)
+        let firstCapture = try #require(try await disk.page().records.first)
         try await disk.capture(.init(content: .text("second"), capturedAt: Date(timeIntervalSince1970: 2), source: "Fixture"), limit: 2)
         try await disk.capture(.init(content: .text("first"), capturedAt: Date(timeIntervalSince1970: 3), source: "New source"), limit: 2)
         let original = try #require(try await disk.page().records.first)
         #expect(original.id == first.id)
         #expect(original.modifiedAt == Date(timeIntervalSince1970: 3))
         #expect(original.source == "New source")
+        let recaptured = try await disk.content(for: firstCapture)
+        #expect(recaptured.modifiedAt == original.modifiedAt)
+        #expect(recaptured.source == original.source)
         try await disk.edit(original, text: "second", limit: 2, now: Date(timeIntervalSince1970: 4))
         let updated = try #require(try await disk.page().records.first)
         #expect(try await disk.page().total == 1)
@@ -79,9 +99,8 @@ struct ClipboardDiskTests {
             ClipboardEntry(content: .text("行 \($0)\u{0} " + ($0 == 5 ? "École Needle" : "regular")),
                            capturedAt: Date(timeIntervalSince1970: Double($0)), source: "Fixture")
         }
-        try JSONEncoder().encode(entries.reversed()).write(to: url.deletingPathExtension().appendingPathExtension("json"))
         let disk = ClipboardDisk(url: url)
-        try await disk.prepare(limit: 2000)
+        for entry in entries { try await disk.capture(entry, limit: 2000) }
         let first = try await disk.page()
         let last = try await disk.page(offset: 1100)
         #expect(first.total == 1200 && first.records.count == 100)

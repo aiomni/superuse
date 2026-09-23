@@ -37,10 +37,18 @@ actor ClipboardDisk {
 
     func content(for record: ClipboardRecord) throws -> ClipboardEntry {
         let db = try open()
-        let entries = try db.query("SELECT body, image FROM history WHERE id = ? AND fingerprint = ?",
+        let entries = try db.query("SELECT kind, body, image, created, modified, source FROM history WHERE id = ? AND fingerprint = ?",
                                   [.text(record.id.uuidString), .text(record.fingerprint)]) { row in
-            ClipboardEntry(id: record.id, content: record.isImage ? .image(row.data(1) ?? Data()) : .text(row.text(0)),
-                           capturedAt: record.capturedAt, source: record.source, modifiedAt: record.modifiedAt)
+            let content: ClipboardContent
+            if row.integer(0) == 1 {
+                guard let data = row.data(2), !data.isEmpty else { throw ClipboardStorageError(message: "历史图片内容损坏。") }
+                content = .image(data)
+            } else {
+                guard !row.isNull(1) else { throw ClipboardStorageError(message: "历史文本内容损坏。") }
+                content = .text(row.text(1))
+            }
+            return ClipboardEntry(id: record.id, content: content, capturedAt: Date(timeIntervalSince1970: row.double(3)),
+                                  source: row.text(5), modifiedAt: Date(timeIntervalSince1970: row.double(4)))
         }
         guard let entry = entries.first else { throw ClipboardStorageError(message: "这条记录已删除或更新，请重新选择。") }
         return entry
@@ -74,7 +82,7 @@ actor ClipboardDisk {
             let pinOrder = current?.pinOrder ?? duplicate?.pinOrder
             if let duplicate { try db.run("DELETE FROM history WHERE id = ?", [.text(duplicate.id.uuidString)]) }
             try db.run("UPDATE history SET body = ?, preview = ?, fingerprint = ?, modified = ?, pin_order = ? WHERE id = ?", [
-                .text(text), .text(preview(text)), .text(fingerprint), .real(now.timeIntervalSince1970),
+                .text(text), .text(ClipboardContent.text(text).preview), .text(fingerprint), .real(now.timeIntervalSince1970),
                 pinOrder.map(SQLiteValue.integer) ?? .null, .text(record.id.uuidString),
             ])
             try trim(db, limit: limit)
@@ -163,30 +171,17 @@ actor ClipboardDisk {
     private func open() throws -> SQLiteDatabase {
         if let database { return database }
         let db = try SQLiteDatabase(url: url)
-        let version = try db.query("PRAGMA user_version") { $0.integer(0) }.first ?? 0
-        guard version <= 1 else { throw ClipboardStorageError(message: "历史文件由更新版本创建，请升级应用后再打开。") }
         try db.execute("""
             CREATE TABLE IF NOT EXISTS history (
-                id TEXT PRIMARY KEY, kind INTEGER NOT NULL, preview TEXT NOT NULL, source TEXT NOT NULL,
+                id TEXT PRIMARY KEY NOT NULL, kind INTEGER NOT NULL CHECK (kind IN (0, 1)), preview TEXT NOT NULL, source TEXT NOT NULL,
                 created REAL NOT NULL, modified REAL NOT NULL, fingerprint TEXT NOT NULL UNIQUE,
-                body TEXT, image BLOB, thumbnail BLOB, pin_order INTEGER
-            );
+                body TEXT, image BLOB, thumbnail BLOB, pin_order INTEGER,
+                CHECK ((kind = 0 AND body IS NOT NULL AND image IS NULL)
+                    OR (kind = 1 AND image IS NOT NULL AND body IS NULL))
+            ) STRICT;
             CREATE INDEX IF NOT EXISTS history_order ON history(pin_order IS NULL, pin_order, modified DESC, id);
-            CREATE TABLE IF NOT EXISTS migration (name TEXT PRIMARY KEY);
-            PRAGMA user_version = 1;
+            CREATE INDEX IF NOT EXISTS history_ordinary_order ON history(modified DESC, id) WHERE pin_order IS NULL;
             """)
-        let legacy = url.deletingPathExtension().appendingPathExtension("json")
-        let migrated = try db.query("SELECT name FROM migration WHERE name = 'legacy-json'") { $0.text(0) }.first != nil
-        if !migrated {
-            // Legacy files were bounded. Decode once, and commit all entries before removing the old file.
-            let entries = FileManager.default.fileExists(atPath: legacy.path)
-                ? try JSONDecoder().decode([ClipboardEntry].self, from: Data(contentsOf: legacy, options: .mappedIfSafe)) : []
-            try db.transaction {
-                for entry in entries.reversed() where entry.content.byteCount > 0 { _ = try Self.insert(entry, in: db) }
-                try db.run("INSERT INTO migration(name) VALUES ('legacy-json')")
-            }
-        }
-        if FileManager.default.fileExists(atPath: legacy.path) { try FileManager.default.removeItem(at: legacy) }
         database = db
         return db
     }
@@ -213,7 +208,7 @@ actor ClipboardDisk {
         try db.run("""
             INSERT INTO history(id, kind, preview, source, created, modified, fingerprint, body, image, thumbnail)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [.text(entry.id.uuidString), .integer(kind), .text(entry.title), .text(entry.source),
+            """, [.text(entry.id.uuidString), .integer(kind), .text(entry.content.preview), .text(entry.source),
                    .real(entry.capturedAt.timeIntervalSince1970), .real(entry.modifiedAt.timeIntervalSince1970),
                    .text(fingerprint), text, image, thumbnail])
         return entry.id
@@ -249,6 +244,4 @@ actor ClipboardDisk {
         }
         return hash.finalize().map { String(format: "%02x", $0) }.joined()
     }
-
-    private func preview(_ text: String) -> String { String(text.prefix(300)).replacingOccurrences(of: "\n", with: " ") }
 }

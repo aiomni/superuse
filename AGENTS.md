@@ -6,6 +6,8 @@ superuse is a macOS 26+ menu bar utility for screenshots and clipboard history. 
 
 Read [README.md](README.md) for user behavior and [DEV.md](DEV.md) for build, signing, architecture, and testing instructions. [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) explains design decisions; [docs/VERIFICATION.md](docs/VERIFICATION.md) records earlier checks and remaining manual work. Dated verification notes are not evidence that a new change was tested.
 
+The project is in prototype development. Design and review against the current requirements and current platform practices. Historical data compatibility is not required: do not add migrations, legacy decoders, or compatibility layers unless explicitly requested. Prefer a clear current data model and schema. This does not authorize deleting user data as part of development or testing.
+
 ## Setup and validation commands
 
 Use macOS with the full Xcode 27+ toolchain, Swift 6.4, and its macOS SDK. The manifest declares Swift tools 6.0 and a macOS 26 deployment target; guarded macOS 27 APIs still require the newer SDK at compile time.
@@ -49,11 +51,11 @@ For behavior changes, add or update meaningful regression coverage and run affec
 ## Compatibility and behavior to preserve
 
 - The product and display name are `superuse`; internal targets remain `Suse` and `SuseCore`. Read display text through `AppIdentity`.
-- Preserve bundle ID `app.suse.mac`, existing UserDefaults keys, and `Suse/clipboard-history.json` unless the task explicitly includes a migration. Cosmetic renames must not reset data or system permissions.
+- Preserve bundle ID `app.suse.mac` and signing identity to retain system permissions. Use `Suse/clipboard-history.sqlite` for current clipboard storage; apply the prototype policy above when changing data formats.
 - Keep command ID `screenshot.region` for saved shortcut compatibility. Defaults are ⇧⌘A for screenshots, ⌃⌥V for history, and ⌃⌥Space for the toolbox.
 - Screenshot selection freezes the desktop, distinguishes clicks from drags, and stays within one display. Review and annotations reuse the overlay. Preserve Retina pixel dimensions and coordinate handling for negative display origins.
 - Scrolling capture uses manual downward scrolling and is bounded to 30,000 pixels in height or 48 million pixels.
-- Clipboard recording and sensitive-marker filtering default to enabled. History always persists locally in SQLite; migrate the legacy `Suse/clipboard-history.json` transactionally before removing it. Default retention is 1,000 ordinary entries, with user-entered positive counts and no product-imposed byte limits. List-pinned records are retained in addition to ordinary history. Keep list summaries paged and original content loaded on demand; do not restore an in-memory array of all content.
+- Clipboard recording and sensitive-marker filtering default to enabled. History always persists locally in SQLite. Default retention is 1,000 ordinary entries, with user-entered positive counts and no product-imposed byte limits. List-pinned records are retained in addition to ordinary history. Keep list summaries paged and original content loaded on demand; do not restore an in-memory array of all content. List pinning uses the context menu and a badge over the content icon; only pinned rows can be reordered, with search empty.
 - Pin supports images and plain text and is session-only, independent of clipboard persistence. Preserve its 16-window, 256 MiB content-memory, and 48 MP image limits. Pin must not implicitly copy content. Text Pins edit their own session snapshot, preserve native selection/undo/IME behavior, and enforce the shared content budget when replacing text (including empty text). History eviction/editing keeps snapshots; explicit deletion closes associated Pins. Screenshot capture suppression must restore each Pin's previous hidden state on success, failure, and cancellation, with a menu-bar recovery path for mouse click-through.
 - Login-item state comes from `SMAppService.mainApp`, not a stored toggle. Opening or refreshing settings must not register the app. `.notFound` allows an explicit registration attempt; errors restore the actual system state. Login launches suppress the toolbox, while manual launches show it.
 

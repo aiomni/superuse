@@ -1,8 +1,15 @@
 import Foundation
 
-public enum ClipboardContent: Codable, Equatable, Sendable {
+public enum ClipboardContent: Equatable, Sendable {
     case text(String)
     case image(Data)
+
+    public var preview: String {
+        switch self {
+        case .text(let text): String(text.prefix(300)).replacingOccurrences(of: "\n", with: " ")
+        case .image: "图片"
+        }
+    }
 
     public var byteCount: Int {
         switch self {
@@ -12,7 +19,7 @@ public enum ClipboardContent: Codable, Equatable, Sendable {
     }
 }
 
-public struct ClipboardEntry: Identifiable, Codable, Equatable, Sendable {
+public struct ClipboardEntry: Identifiable, Equatable, Sendable {
     public let id: UUID
     public let content: ClipboardContent
     public let capturedAt: Date
@@ -26,31 +33,6 @@ public struct ClipboardEntry: Identifiable, Codable, Equatable, Sendable {
         self.capturedAt = capturedAt
         self.source = source
         self.modifiedAt = modifiedAt ?? capturedAt
-    }
-
-    private enum CodingKeys: String, CodingKey { case id, content, capturedAt, source, modifiedAt }
-
-    public init(from decoder: any Decoder) throws {
-        let values = try decoder.container(keyedBy: CodingKeys.self)
-        id = try values.decode(UUID.self, forKey: .id)
-        content = try values.decode(ClipboardContent.self, forKey: .content)
-        capturedAt = try values.decode(Date.self, forKey: .capturedAt)
-        source = try values.decode(String.self, forKey: .source)
-        modifiedAt = try values.decodeIfPresent(Date.self, forKey: .modifiedAt) ?? capturedAt
-    }
-
-    public var title: String {
-        switch content {
-        case .text(let text): String(text.prefix(300)).replacingOccurrences(of: "\n", with: " ")
-        case .image: "图片"
-        }
-    }
-
-    public func matches(_ query: String) -> Bool {
-        query.isEmpty || source.localizedCaseInsensitiveContains(query) || {
-            if case .text(let text) = content { return text.localizedCaseInsensitiveContains(query) }
-            return "图片 image".localizedCaseInsensitiveContains(query)
-        }()
     }
 }
 

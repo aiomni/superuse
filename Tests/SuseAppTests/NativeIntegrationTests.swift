@@ -49,14 +49,13 @@ struct NativeIntegrationTests {
         #expect(FileManager.default.fileExists(atPath: path.path))
     }
 
-    @Test func historyPersistsAcrossRestartEvenWithLegacyPersistenceDisabled() async throws {
+    @Test func historyPersistsAcrossRestartAndPausedRecording() async throws {
         let (store, settings, pasteboard, path, suite) = isolatedStore()
         defer {
             settings.defaults.removePersistentDomain(forName: suite)
             pasteboard.releaseGlobally()
             try? FileManager.default.removeItem(at: path.deletingLastPathComponent())
         }
-        settings.defaults.set(false, forKey: "clipboard.persist")
         pasteboard.clearContents()
         pasteboard.setString("local history", forType: .string)
         store.checkForChanges()

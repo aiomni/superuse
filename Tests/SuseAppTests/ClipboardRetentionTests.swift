@@ -87,7 +87,6 @@ struct ClipboardRetentionTests {
         let fixture = Fixture()
         defer { fixture.cleanup() }
         fixture.settings.defaults.set(200, forKey: "clipboard.limit")
-        fixture.settings.defaults.set(false, forKey: "clipboard.persist")
         let settings = SettingsStore(defaults: fixture.settings.defaults)
         #expect(settings.clipboardLimit == 200)
         fixture.capture("saved")
