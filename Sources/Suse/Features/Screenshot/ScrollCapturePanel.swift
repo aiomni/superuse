@@ -3,19 +3,21 @@ import AppKit
 /// Nonactivating capture controls. Status changes never resize or reposition the panel.
 @MainActor
 final class ScrollCapturePanel: NSPanel {
-    enum CaptureState { case recording, paused, retry, limitReached, finishing }
+    typealias CaptureState = ScrollCaptureState
 
     private let status = UI.label("", size: 12, weight: .medium)
     private let hint = UI.label("", size: 11, color: .secondaryLabelColor)
     private let pauseButton: ActionButton
     private let finishButton: ActionButton
+    private let automaticButton: ActionButton
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
     init(selectionRect: CGRect, visibleFrame: CGRect, onPause: @escaping () -> Void,
-         onCancel: @escaping () -> Void, onFinish: @escaping () -> Void) {
+         onCancel: @escaping () -> Void, onFinish: @escaping () -> Void, onAutomatic: @escaping () -> Void = {}) {
         pauseButton = ActionButton("暂停", symbol: "pause", style: .accessoryBar, action: onPause)
+        automaticButton = ActionButton("自动滚动", symbol: "arrow.down", style: .accessoryBar, action: onAutomatic)
         finishButton = ActionButton("完成", symbol: "checkmark", symbolColor: .systemGreen,
                                     style: .accessoryBar, action: onFinish)
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -32,14 +34,15 @@ final class ScrollCapturePanel: NSPanel {
 
         pauseButton.setAccessibilityIdentifier("scroll-capture-pause")
         pauseButton.widthAnchor.constraint(equalToConstant: 80).isActive = true
+        automaticButton.setAccessibilityIdentifier("scroll-capture-automatic")
+        automaticButton.widthAnchor.constraint(equalToConstant: 104).isActive = true
         finishButton.setAccessibilityIdentifier("scroll-capture-finish")
         finishButton.toolTip = "完成滚动截图并返回编辑；也可再次按截图快捷键"
         let cancel = ActionButton(icon: "取消滚动截图", symbol: "xmark", symbolColor: .systemRed,
                                   style: .accessoryBar, action: onCancel)
         cancel.setAccessibilityIdentifier("scroll-capture-cancel")
         cancel.toolTip = "取消滚动截图，返回原图编辑"
-        let actions = UI.stack([pauseButton, UI.stack([cancel, finishButton], axis: .horizontal, spacing: 8)],
-                               axis: .horizontal, spacing: 16)
+        let actions = UI.stack([automaticButton, pauseButton, cancel, finishButton], axis: .horizontal, spacing: 8)
         let bar = UI.glassBar(actions, inset: 8)
         bar.setAccessibilityIdentifier("scroll-capture-actions")
 
@@ -68,25 +71,30 @@ final class ScrollCapturePanel: NSPanel {
         setFrame(Self.placement(size: frame.size, selection: selectionRect, visibleFrame: visibleFrame), display: false)
     }
 
-    func update(state: CaptureState, message: String) {
+    func update(state: CaptureState, message: String, automatic: Bool = false) {
         status.stringValue = message
         status.toolTip = message
         pauseButton.isEnabled = state != .limitReached && state != .finishing
         finishButton.isEnabled = state != .finishing
+        automaticButton.isEnabled = state != .limitReached && state != .finishing
+        automaticButton.title = automatic ? "手动滚动" : "自动滚动"
+        automaticButton.image = NSImage(systemSymbolName: automatic ? "hand.draw" : "arrow.down", accessibilityDescription: nil)
+        automaticButton.toolTip = automatic ? "切换为手动滚动，保留已拼接内容" : "自动向下滚动并拼接，点击选区完成"
+        automaticButton.setAccessibilityLabel("切换为\(automaticButton.title)")
         let title: String, symbol: String
         switch state {
         case .recording:
             title = "暂停"; symbol = "pause"
-            hint.stringValue = "缓慢向下滚动 · 再按截图快捷键完成"
+            hint.stringValue = automatic ? "点击选区或再按截图快捷键完成" : "缓慢向下滚动 · 再按截图快捷键完成"
         case .paused:
             title = "继续"; symbol = "play"
-            hint.stringValue = "继续后恢复捕获，已拼接内容会保留"
+            hint.stringValue = automatic ? "点击选区完成，或继续自动滚动" : "继续后恢复捕获，已拼接内容会保留"
         case .retry:
             title = "重试"; symbol = "arrow.clockwise"
-            hint.stringValue = "重试捕获，或完成并保留已有长图"
+            hint.stringValue = automatic ? "返回原窗口重试，或点击选区完成" : "重试捕获，或完成并保留已有长图"
         case .limitReached:
             title = "暂停"; symbol = "pause"
-            hint.stringValue = "请完成截图，保留已拼接的内容"
+            hint.stringValue = automatic ? "点击选区完成，保留已拼接内容" : "请完成截图，保留已拼接的内容"
         case .finishing:
             title = "暂停"; symbol = "pause"
             hint.stringValue = "请稍候，完成后返回截图编辑"

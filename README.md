@@ -13,8 +13,8 @@ superuse is a prototype. Stored data formats may change between builds without m
 ## What you can do
 
 - **Capture a screen, window, or region.** Select a window with a click or drag around exactly what you need.
-- **Annotate before sharing.** Add arrows, shapes, text, freehand marks, mosaics, and opaque redactions, with undo and redo.
-- **Capture a long page.** Scroll through the content yourself while superuse combines it into one image.
+- **Annotate before sharing.** Add and edit arrows, shapes, text, emoji, freehand marks, mosaics, and opaque redactions, with undo and redo.
+- **Capture a long page.** Let superuse scroll and combine the content automatically, or scroll through it yourself.
 - **Find your clipboard history.** Search copied text and images, edit text, and copy or paste an earlier entry.
 - **Pin a reference to your screen.** Keep screenshots, clipboard images, and plain text in floating windows while you work.
 - **Monitor your Mac.** See CPU, memory, GPU, network speed, disk activity and capacity, battery, temperatures, and thermal pressure in a native menu bar panel or a desktop window with history charts and high-usage processes.
@@ -43,22 +43,34 @@ For building the app from source, see the [development guide](DEV.md).
 
 1. Press **Shift + Command + A** to freeze the screen. Move over a window to select it, or over the desktop to select the screen.
 2. **Click** to confirm, or **drag** to select an area.
-3. Annotation tools are ready immediately. Draw on the image, start a scrolling capture, change the selection, save, or copy.
+3. Before annotating, drag inside the selection to move it, drag a side to adjust its width or height, or drag a corner to adjust both. Choose an annotation tool to draw, or start a scrolling capture, save, or copy.
 4. Press **Return** to copy and finish, **Shift + Command + C** to copy and keep editing, **Command + S** to save, **Command + P** to Pin the annotated image, or **Esc** to cancel.
 
-While annotating, use **Command + Z** to undo and **Shift + Command + Z** to redo. **Esc** exits the screenshot even while the canvas or an editing control has focus. In a text-entry or save dialog, the dialog handles its own keyboard shortcuts.
+Choose **Select (选择)** to select an existing annotation. Drag it to move it, drag its corner handles to resize it, or use the color and size controls to change its appearance. Arrows have handles at both endpoints. Press **Delete** to remove the selected annotation.
+
+The Select tool initially moves the screenshot area. Adjustment stays within the same display and uses the frozen screen image. Starting an annotation locks the capture area, including after undoing that annotation; use **Reselect (重选)** to choose a new area. A completed scrolling image also keeps its capture area fixed.
+
+Choose **Text (文字)** and click the canvas to type directly. Drag the handles at the middle of its left and right edges to change the wrapping width without changing the font size, including while typing. The opposite edge stays fixed, and manual line breaks are preserved. Corner handles scale the text and its box together. Double-click existing text with the Select tool to edit it again. **Return** inserts a new line; **Command + Return**, clicking outside the text box, or choosing another tool finishes text editing. Choose **Emoji (表情)** and click the canvas to open the system character picker. Emoji can also be mixed with text, moved, and resized. Copy, save, and Pin include pending text edits.
+
+While annotating, use **Command + Z** to undo and **Shift + Command + Z** to redo. During text entry these shortcuts edit the text; afterward they undo annotation changes. **Esc** exits the screenshot, except while the input method is composing text or a save dialog is open, when that input method or dialog handles it.
 
 While selecting a screen, window, or region, a floating magnifier shows the pixel under the pointer, its coordinates, and its sRGB color. Coordinates use actual pixels from the current display's top-left corner. Press **Shift** to cycle through RGB, HEX, and HSL; **Command + C** copies the displayed color value without confirming the screenshot. Full-screen selections keep their original brightness and have a contrasting border on all four sides. The magnifier disappears when you confirm the selection.
 
-Choose **Mosaic (打码)**, the checkerboard icon, and drag over an area to pixelate it. The fine, medium, and coarse controls set the block size for the next area. **Redact (遮挡)** covers an area with opaque black. Both tools are included in copied and saved images and support undo and redo.
+Choose **Mosaic (打码)**, the checkerboard icon, and drag over an area to pixelate it. The fine, medium, and coarse controls set the block size for the selected mosaic or the next area. **Redact (遮挡)** covers an area with opaque black. Both tools are included in copied and saved images and support undo and redo.
 
-By default, confirming a selection also copies the original screenshot. Turn off automatic copying in screenshot settings if you prefer to edit first.
+By default, confirming a selection also copies the original screenshot. Moving or resizing the area updates that copy when you release the mouse. Turn off automatic copying in screenshot settings if you prefer to edit first.
 
 Screenshots work across multiple-monitor setups, with each selection staying on one display. Window captures include the visible part of the window, without its shadow.
 
 ### Scrolling screenshots
 
-Select the content area and choose the scrolling action before adding annotations. Adding an annotation disables scrolling capture; undo or clear all annotations to enable it again. Choosing a tool, color, or line width does not disable it. Scroll downward slowly, keeping some of the previous content visible each time. Click Finish or press **Shift + Command + A** again to return to the preview.
+Select the content area and choose the scrolling action before adding annotations. Adding an annotation disables scrolling capture; undo or clear all annotations to enable it again. Choosing a tool, color, or line width does not disable it.
+
+With Accessibility permission, superuse scrolls downward in small steps and waits for each view to settle before stitching. **Click inside the selected area to stop and finish**; that click is consumed so it does not activate a link or button underneath. You can also click Finish or press **Shift + Command + A** again to return to the preview. Pause and resume from the floating controls.
+
+Without Accessibility permission, capture uses manual scrolling. After granting permission, click **Auto Scroll (自动滚动)** to enable it. Click **Manual Scroll (手动滚动)** to switch back at any time. In manual mode, scroll downward slowly and keep some previous content visible; finish using the floating button or screenshot shortcut.
+
+Automatic scrolling pauses when the content stops changing, a match fails, the target window is moved or covered at the scroll point, or you switch apps. Restore the original window and retry, switch to manual scrolling to adjust the position, or finish with the content already captured.
 
 Keep fixed headers and sidebars outside the selection where possible. Animation, repeated patterns, fast scrolling, and scrolling backward can interrupt matching. If that happens, superuse keeps the portion already captured so you can retry or save it.
 
@@ -126,7 +138,7 @@ superuse works locally on your Mac and does not require an account.
 | --- | --- |
 | Screen recording | To capture your screen when you start a screenshot |
 | Clipboard access | To record the text and images you copy |
-| Accessibility | To paste directly into another app |
+| Accessibility | To scroll screenshots automatically and paste directly into another app |
 | Login items | To open automatically at login, if you enable that option |
 
 Settings includes shortcuts to the relevant system settings. Without Accessibility permission, you can still copy an entry and paste it yourself. If direct paste cannot return to the target app, the entry remains copied for manual pasting.

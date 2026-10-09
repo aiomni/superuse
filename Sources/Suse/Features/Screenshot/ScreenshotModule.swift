@@ -76,23 +76,25 @@ final class ScreenshotModule: FeatureModule {
     }
 
     /// Returns true only when the user explicitly chooses to select another area.
-    private func review(_ selection: CaptureSelection, content: SCShareableContent,
+    private func review(_ initialSelection: CaptureSelection, content: SCShareableContent,
                         windows: [SCWindow], source: NSRunningApplication?) async throws -> Bool {
+        var selection = initialSelection
         var image = try selection.snapshot.crop(selection.target.rect)
         var allowsScrolling = true
         var copyAutomatically = settings.defaults.bool(forKey: "screenshot.copyAfterCapture")
         while !Task.isCancelled {
-            let action = await selector.review(image: image, selection: selection, allowsScrolling: allowsScrolling,
+            let result = await selector.review(image: image, selection: selection, allowsScrolling: allowsScrolling,
                                                copyAutomatically: copyAutomatically, onPin: pins.map { pins in
-                { image in
-                    let rect = selection.target.rect
+                { image, target in
+                    let rect = target.rect
                     let size = CGSize(width: rect.width, height: rect.width * CGFloat(image.height) / CGFloat(image.width))
                     let appKitRect = ScreenGeometry.quartzRect(fromAppKit: rect, mainDisplayHeight: CGDisplayBounds(CGMainDisplayID()).height)
                     try pins.pin(PinRequest(content: .image(image, pointSize: size), source: .screenshot, preferredFrame: appKitRect))
                 }
             })
             try Task.checkCancellation()
-            switch action {
+            selection = CaptureSelection(target: result.target, snapshot: selection.snapshot)
+            switch result.action {
             case .done: return false
             case .pinned:
                 selector.close()
@@ -100,10 +102,11 @@ final class ScreenshotModule: FeatureModule {
                 return false
             case .reselect: return true
             case .scroll:
+                image = try selection.snapshot.crop(selection.target.rect)
                 copyAutomatically = false
                 selector.suspend()
                 let session = ScrollCaptureSession(capture: capture, region: selection.target.rect,
-                                                   display: selection.snapshot.display, content: content)
+                                                   snapshot: selection.snapshot, content: content)
                 scrollSession = session
                 let center = CGPoint(x: selection.target.rect.midX, y: selection.target.rect.midY)
                 let window: SCWindow?
@@ -111,7 +114,7 @@ final class ScreenshotModule: FeatureModule {
                 else { window = windows.first { $0.frame.contains(center) } }
                 let owner = window?.owningApplication
                 let target = owner.flatMap { NSRunningApplication(processIdentifier: $0.processID) } ?? source
-                if let stitched = await session.run(initialImage: image, source: target) {
+                if let stitched = await session.run(initialImage: image, source: target, windowID: window?.windowID) {
                     image = stitched
                     allowsScrolling = false
                     copyAutomatically = settings.defaults.bool(forKey: "screenshot.copyAfterCapture")
@@ -130,13 +133,13 @@ final class ScreenshotModule: FeatureModule {
             }]),
             UI.section(UI.stack([
                 UI.label("单击确认，拖动框选", size: 16, weight: .semibold),
-                UI.label("按截图快捷键后，鼠标在窗口上自动框选窗口，在桌面或全屏应用上框选当前屏幕。单击确认；按住拖动始终选择区域。确认后画面保持定格，可进入滚动截图、原位编辑、复制或保存。Esc 退出。", color: .secondaryLabelColor),
+                UI.label("按截图快捷键后，鼠标在窗口上自动框选窗口，在桌面或全屏应用上框选当前屏幕。单击确认；按住拖动始终选择区域。标注前可拖动选区内部移动位置，拖动四边或四角调整宽高；点击标注工具开始编辑。画面保持定格，也可进入滚动截图、复制或保存。Esc 退出。", color: .secondaryLabelColor),
                 UI.label("选区时放大镜显示鼠标下的像素、坐标与色值。⇧ 切换 RGB／HEX／HSL，⌘C 复制当前色值。坐标以当前屏幕左上角为原点，按实际像素显示。", size: 12, color: .secondaryLabelColor),
             ])),
             UI.section(UI.stack([
                 UI.label("编辑与滚动", size: 14, weight: .semibold),
                 UI.label("标注支持画笔、箭头、矩形、椭圆、文字、实心遮挡和马赛克打码。选中打码后拖动框选，细／中／粗调整颗粒大小。⌘Z 撤销，⇧⌘Z 重做，Esc 退出截图。Enter 复制并完成，⌘S 保存 PNG，⌘P 将成品 Pin 到屏幕上。", size: 12, color: .secondaryLabelColor),
-                UI.label("滚动截图时避开固定页眉 / 侧栏，缓慢向下滚动，每次保留至少 1/4 重叠。点击完成或再次按截图快捷键，返回原位预览。", size: 12, color: .secondaryLabelColor),
+                UI.label("滚动截图会自动向下滚动并拼接，点击选区停止并完成。自动滚动需要辅助功能权限，也可切换为手动滚动。避开固定页眉 / 侧栏；手动时缓慢向下滚动，保留至少 1/4 重叠。点击完成或再次按截图快捷键也可返回预览。", size: 12, color: .secondaryLabelColor),
             ], spacing: 10)),
             UI.label("区域选择位于一块显示器内。长图上限为 30,000 px 高或 48 MP。", size: 11, color: .secondaryLabelColor),
         ])

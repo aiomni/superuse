@@ -4,6 +4,7 @@ import Foundation
 public enum StitchResult: Equatable, Sendable {
     case appended(height: Int, frames: Int)
     case unchanged
+    case settling
     case rejected(String)
     case limitReached
 }
@@ -28,9 +29,11 @@ public actor ScrollStitcher {
         guard let frame = GrayFrame(image: image) else { return .rejected("无法读取画面像素。") }
         defer { candidate = frame }
         if previous == nil { return append(image, frame: frame) }
-        guard let candidate, frame.isSimilar(to: candidate) else { return .unchanged }
+        guard let candidate, frame.isSimilar(to: candidate) else { return .settling }
         return append(image, frame: frame)
     }
+
+    public func resetStability() { candidate = nil }
 
     public func append(_ image: CGImage) -> StitchResult {
         guard let frame = GrayFrame(image: image) else { return .rejected("无法读取画面像素。") }

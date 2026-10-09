@@ -37,16 +37,27 @@ final class ScreenCaptureService {
         return ScreenSnapshot(display: display, appKitFrame: frame, image: image)
     }
 
-    func capture(region: CGRect, display: SCDisplay, content: SCShareableContent) async throws -> CGImage {
+    func capture(region: CGRect, display: SCDisplay, pixelSize: CGSize, content: SCShareableContent) async throws -> CGImage {
         let filter = displayFilter(display, content: content)
-        let config = configuration()
-        config.sourceRect = CGRect(x: region.minX - display.frame.minX, y: region.minY - display.frame.minY,
-                                   width: region.width, height: region.height)
-        config.width = Int(region.width * CGFloat(filter.pointPixelScale))
-        config.height = Int(region.height * CGFloat(filter.pointPixelScale))
+        let config = try regionConfiguration(region: region, displayFrame: display.frame, pixelSize: pixelSize)
         let result = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: config)
         guard let image = result.sdrImage else { throw AppError("选定区域已不可用。") }
         return image
+    }
+
+    func regionConfiguration(region: CGRect, displayFrame: CGRect, pixelSize: CGSize) throws -> SCScreenshotConfiguration {
+        let crop = ScreenGeometry.pixelCrop(selection: region, displayFrame: displayFrame, pixelSize: pixelSize)
+        guard !crop.isEmpty else { throw AppError("选定区域已不可用。") }
+        let scaleX = pixelSize.width / displayFrame.width
+        let scaleY = pixelSize.height / displayFrame.height
+        let config = configuration()
+        // Match the frozen snapshot's outward-rounded pixel edges, including its origin.
+        // Truncating the selected size alone loses pixels; changing only the output size resamples them.
+        config.sourceRect = CGRect(x: crop.minX / scaleX, y: crop.minY / scaleY,
+                                   width: crop.width / scaleX, height: crop.height / scaleY)
+        config.width = Int(crop.width)
+        config.height = Int(crop.height)
+        return config
     }
 
     func orderedWindows(in content: SCShareableContent) -> [SCWindow] {

@@ -15,7 +15,8 @@ struct ScrollCapturePanelTests {
         let pause = try button("scroll-capture-pause", in: content)
         let finish = try button("scroll-capture-finish", in: content)
         let cancel = try button("scroll-capture-cancel", in: content)
-        let buttons = [pause, cancel, finish]
+        let automatic = try button("scroll-capture-automatic", in: content)
+        let buttons = [automatic, pause, cancel, finish]
         panel.setFrameOrigin(CGPoint(x: 60, y: 80))
         content.layoutSubtreeIfNeeded()
         let originalFrame = panel.frame
@@ -54,6 +55,12 @@ struct ScrollCapturePanelTests {
                     #expect(abs(frame.midY - buttonFrames[0].midY) < 1)
                     if index > 0 { #expect(!frame.intersects(buttonFrames[index - 1])) }
                 }
+                panel.update(state: state, message: message, automatic: true)
+                content.layoutSubtreeIfNeeded()
+                #expect(panel.frame == originalFrame)
+                #expect(buttons.map { content.convert($0.bounds, from: $0) } == buttonFrames)
+                #expect(automatic.title == "手动滚动")
+                #expect(automatic.isEnabled == (state != .limitReached && state != .finishing))
             }
             panel.update(state: .recording, message: "已拼接 12 帧 · 长图高度 8400 px")
             try render(panel, name: name)
@@ -61,27 +68,33 @@ struct ScrollCapturePanelTests {
     }
 
     @Test func pauseFinishAndCancelDispatchOnlyEnabledActions() throws {
-        var pauseCount = 0, finishCount = 0, cancelCount = 0
-        let panel = makePanel(onPause: { pauseCount += 1 }, onCancel: { cancelCount += 1 }, onFinish: { finishCount += 1 })
+        var pauseCount = 0, finishCount = 0, cancelCount = 0, automaticCount = 0
+        let panel = makePanel(onPause: { pauseCount += 1 }, onCancel: { cancelCount += 1 }, onFinish: { finishCount += 1 },
+                              onAutomatic: { automaticCount += 1 })
         defer { panel.close() }
         let content = try #require(panel.contentView)
         let pause = try button("scroll-capture-pause", in: content)
         let finish = try button("scroll-capture-finish", in: content)
         let cancel = try button("scroll-capture-cancel", in: content)
+        let automatic = try button("scroll-capture-automatic", in: content)
         for state in [ScrollCapturePanel.CaptureState.recording, .paused, .retry] {
             panel.update(state: state, message: "测试状态")
             pause.performClick(nil)
+            automatic.performClick(nil)
         }
         #expect(pauseCount == 3)
         panel.update(state: .limitReached, message: "达到上限")
         pause.performClick(nil)
+        automatic.performClick(nil)
         finish.performClick(nil)
         #expect(pauseCount == 3 && finishCount == 1)
         panel.update(state: .finishing, message: "正在生成长图…")
         pause.performClick(nil)
         finish.performClick(nil)
         cancel.performClick(nil)
+        automatic.performClick(nil)
         #expect(pauseCount == 3 && finishCount == 1 && cancelCount == 1)
+        #expect(automaticCount == 3)
     }
 
     @Test func initialPlacementPrefersOutsideSelectionAndHandlesNegativeDisplayOrigins() {
@@ -102,11 +115,11 @@ struct ScrollCapturePanelTests {
     }
 
     private func makePanel(onPause: @escaping () -> Void = {}, onCancel: @escaping () -> Void = {},
-                           onFinish: @escaping () -> Void = {}) -> ScrollCapturePanel {
+                           onFinish: @escaping () -> Void = {}, onAutomatic: @escaping () -> Void = {}) -> ScrollCapturePanel {
         _ = NSApplication.shared
         return ScrollCapturePanel(selectionRect: CGRect(x: 260, y: 250, width: 600, height: 320),
                                   visibleFrame: CGRect(x: 0, y: 0, width: 1200, height: 800),
-                                  onPause: onPause, onCancel: onCancel, onFinish: onFinish)
+                                  onPause: onPause, onCancel: onCancel, onFinish: onFinish, onAutomatic: onAutomatic)
     }
 
     private func descendants(_ view: NSView) -> [NSView] {

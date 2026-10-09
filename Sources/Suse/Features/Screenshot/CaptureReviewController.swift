@@ -1,4 +1,5 @@
 import AppKit
+import SuseCore
 import UniformTypeIdentifiers
 
 enum CaptureReviewAction { case scroll, reselect, pinned, done }
@@ -6,8 +7,11 @@ enum CaptureReviewAction { case scroll, reselect, pinned, done }
 @MainActor
 private final class CaptureReviewView: NSView {
     var onCopy: (() -> Void)?
+    var onBackgroundClick: (() -> Void)?
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+
+    override func mouseDown(with event: NSEvent) { onBackgroundClick?() }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         if event.keyCode == 8 && event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command, .shift] {
@@ -22,33 +26,45 @@ private final class CaptureReviewView: NSView {
 @MainActor
 final class CaptureReviewController: NSViewController {
     private let canvas: AnnotationCanvas
-    private let selectionRect: CGRect
+    private(set) var selectionRect: CGRect
     private let displaySize: CGSize
     private let allowsScrolling: Bool
     private let pasteboard: NSPasteboard
     private let onPin: ((CGImage) throws -> Void)?
+    private let sourceImage: CGImage?
+    private let copyAfterAdjustment: Bool
+    private var hasBegunAnnotation = false
+    private var regionAdjustment: CaptureRegionAdjustmentView?
     private let status = UI.label("", size: 12, weight: .medium)
     private let statusBadge = NSBox()
     private let scroll = NSScrollView()
     private let toolPicker = NSSegmentedControl()
     private let colorWell = NSColorWell()
+    private let widths = NSSegmentedControl()
     private var toolbar: NSView?
+    private var toolbarContent: NSStackView?
+    private var palette: NSView?
     private var toolbarAnchor = CGPoint.zero
     private var toolbarBelowSelection = false
     private var scrollButton: ActionButton?
     var onAction: ((CaptureReviewAction) -> Void)?
+    var onRegionChange: ((CGRect) -> Void)?
 
     init(image: CGImage, selectionRect: CGRect, displaySize: CGSize, allowsScrolling: Bool,
-         pasteboard: NSPasteboard = .general, onPin: ((CGImage) throws -> Void)? = nil) {
+         pasteboard: NSPasteboard = .general, onPin: ((CGImage) throws -> Void)? = nil,
+         sourceImage: CGImage? = nil, copyAfterAdjustment: Bool = false) {
         self.selectionRect = selectionRect
         self.displaySize = displaySize
         self.allowsScrolling = allowsScrolling
         self.pasteboard = pasteboard
         self.onPin = onPin
-        canvas = AnnotationCanvas(image: image, displayWidth: selectionRect.width)
+        self.sourceImage = sourceImage
+        self.copyAfterAdjustment = copyAfterAdjustment
+        canvas = AnnotationCanvas(image: image, displayWidth: selectionRect.width, pasteboard: pasteboard)
+        if sourceImage != nil { canvas.tool = .select }
         super.init(nibName: nil, bundle: nil)
-        canvas.requestText = { [weak self] in self?.requestText(at: $0) }
         canvas.onChange = { [weak self] in self?.updateStatus() }
+        canvas.onSelectionChange = { [weak self] in self?.updatePalette() }
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
@@ -56,6 +72,7 @@ final class CaptureReviewController: NSViewController {
     override func loadView() {
         let content = CaptureReviewView(frame: CGRect(origin: .zero, size: displaySize))
         content.onCopy = { [weak self] in self?.copyImage(completing: false) }
+        content.onBackgroundClick = { [weak self] in self?.canvas.finishTextEditing() }
         view = content
         scroll.frame = selectionRect
         scroll.documentView = canvas
@@ -70,12 +87,22 @@ final class CaptureReviewController: NSViewController {
         scroll.layer?.borderWidth = 2
         scroll.layer?.borderColor = NSColor.controlAccentColor.cgColor
         view.addSubview(scroll)
+        if sourceImage != nil {
+            let adjustment = CaptureRegionAdjustmentView(rect: selectionRect, displaySize: displaySize)
+            adjustment.onChange = { [weak self] rect, finished in self?.adjustRegion(to: rect, finished: finished) }
+            view.addSubview(adjustment)
+            regionAdjustment = adjustment
+        }
         buildStatusBadge()
         buildToolbar()
     }
 
     private func buildToolbar() {
-        let scrolling = ActionButton("滚动截图", symbol: "scroll", style: .accessoryBar) { [weak self] in self?.onAction?(.scroll) }
+        let scrolling = ActionButton("滚动截图", symbol: "scroll", style: .accessoryBar) { [weak self] in
+            guard let self else { return }
+            canvas.finishTextEditing()
+            if canvas.annotationCount == 0 { onAction?(.scroll) }
+        }
         scrolling.isHidden = !allowsScrolling
         scrollButton = scrolling
         let copy = ActionButton("完成", symbol: "checkmark", symbolColor: .systemGreen, style: .accessoryBar) { [weak self] in self?.copyImage(completing: true) }
@@ -101,8 +128,10 @@ final class CaptureReviewController: NSViewController {
             UI.stack([cancel, copy], axis: .horizontal, spacing: 8),
         ], axis: .horizontal, spacing: 16)
         let palette = UI.glassBar(makePalette(), inset: 8)
+        self.palette = palette
         let mainBar = UI.glassBar(actions, inset: 8)
         let content = UI.stack([palette, mainBar], spacing: 8)
+        toolbarContent = content
         content.alignment = .trailing
         let container = UI.glassContainer(content)
         view.addSubview(container)
@@ -150,6 +179,7 @@ final class CaptureReviewController: NSViewController {
         toolPicker.segmentCount = AnnotationTool.allCases.count
         toolPicker.trackingMode = .selectOne
         toolPicker.segmentStyle = .roundRect
+        toolPicker.setAccessibilityLabel("标注工具")
         for tool in AnnotationTool.allCases {
             let image = NSImage(systemSymbolName: tool.symbol, accessibilityDescription: tool.title)?
                 .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
@@ -157,26 +187,31 @@ final class CaptureReviewController: NSViewController {
             toolPicker.setToolTip(tool.tooltip, forSegment: tool.rawValue)
             toolPicker.setWidth(32, forSegment: tool.rawValue)
         }
-        toolPicker.selectedSegment = AnnotationTool.arrow.rawValue
+        toolPicker.selectedSegment = canvas.tool.rawValue
         toolPicker.target = self
         toolPicker.action = #selector(toolChanged)
         colorWell.color = .systemRed
         colorWell.colorWellStyle = .minimal
+        colorWell.setAccessibilityLabel("标注颜色")
         colorWell.target = self
         colorWell.action = #selector(colorChanged)
         colorWell.widthAnchor.constraint(equalToConstant: 24).isActive = true
         colorWell.heightAnchor.constraint(equalTo: colorWell.widthAnchor).isActive = true
-        let widths = NSSegmentedControl(labels: ["细", "中", "粗"], trackingMode: .selectOne,
-                                        target: self, action: #selector(widthChanged(_:)))
+        widths.segmentCount = 3
+        widths.trackingMode = .selectOne
+        widths.target = self
+        widths.action = #selector(widthChanged(_:))
+        for (index, title) in ["细", "中", "粗"].enumerated() { widths.setLabel(title, forSegment: index) }
         widths.segmentStyle = .roundRect
+        widths.setAccessibilityLabel("标注大小")
         widths.font = .systemFont(ofSize: 13, weight: .medium)
-        widths.toolTip = "线条粗细；打码时调整马赛克颗粒大小"
+        widths.toolTip = "调整选中标注或新标注的线条粗细、字号、马赛克颗粒大小"
         widths.selectedSegment = 1
-        let undo = ActionButton(icon: "撤销", symbol: "arrow.uturn.backward", style: .accessoryBar) { [weak self] in self?.canvas.undoManager?.undo() }
+        let undo = ActionButton(icon: "撤销", symbol: "arrow.uturn.backward", style: .accessoryBar) { [weak self] in self?.canvas.undoEdit() }
         undo.keyEquivalent = "z"
         undo.keyEquivalentModifierMask = [.command]
         undo.toolTip = "撤销（⌘Z）"
-        let redo = ActionButton(icon: "重做", symbol: "arrow.uturn.forward", style: .accessoryBar) { [weak self] in self?.canvas.undoManager?.redo() }
+        let redo = ActionButton(icon: "重做", symbol: "arrow.uturn.forward", style: .accessoryBar) { [weak self] in self?.canvas.undoEdit(redo: true) }
         redo.keyEquivalent = "Z"
         redo.keyEquivalentModifierMask = [.command, .shift]
         redo.toolTip = "重做（⇧⌘Z）"
@@ -193,6 +228,9 @@ final class CaptureReviewController: NSViewController {
         toolbar.layoutSubtreeIfNeeded()
         let size = toolbar.fittingSize
         let margin: CGFloat = 12
+        toolbarBelowSelection = false
+        content.removeArrangedSubview(palette)
+        content.insertArrangedSubview(palette, at: 0)
         let x = min(max(margin, selectionRect.maxX - size.width), max(margin, displaySize.width - size.width - margin))
         toolbarAnchor.x = x + size.width
         if selectionRect.maxY + margin + size.height <= displaySize.height - margin {
@@ -219,16 +257,30 @@ final class CaptureReviewController: NSViewController {
 
     @objc private func toolChanged() {
         canvas.tool = AnnotationTool(rawValue: toolPicker.selectedSegment) ?? .arrow
-        colorWell.isEnabled = canvas.tool != .mosaic && canvas.tool != .redact
+        regionAdjustment?.allowsMove = canvas.tool == .select
+        updatePalette()
         canvas.window?.invalidateCursorRects(for: canvas)
     }
-    @objc private func colorChanged() { canvas.ink = colorWell.color }
-    @objc private func widthChanged(_ sender: NSSegmentedControl) { canvas.lineWidth = [2, 5, 10][sender.selectedSegment] }
+    @objc private func colorChanged() { canvas.setInk(colorWell.color) }
+    @objc private func widthChanged(_ sender: NSSegmentedControl) { canvas.setLineWidth([2, 5, 10][sender.selectedSegment]) }
+
+    private func updatePalette() {
+        let selected = canvas.selectedAnnotation
+        let tool = selected?.tool ?? canvas.tool
+        colorWell.color = selected?.color ?? canvas.ink
+        colorWell.isEnabled = tool != .mosaic && tool != .redact && tool != .emoji
+        widths.isEnabled = tool != .redact
+        widths.selectedSegment = [CGFloat(2), 5, 10].firstIndex(of: selected?.width ?? canvas.lineWidth) ?? -1
+    }
 
     private func updateStatus() {
+        if canvas.annotationCount > 0 || canvas.textEditor != nil { hasBegunAnnotation = true }
+        regionAdjustment?.isHidden = hasBegunAnnotation
         let annotations = canvas.annotationCount > 0 ? " · \(canvas.annotationCount) 处标注" : ""
         setStatus("\(canvas.image.width) × \(canvas.image.height) px\(annotations)")
-        status.toolTip = "↩ 完成 · ⌘S 保存 · ⇧⌘C 复制 · Esc 退出"
+        status.toolTip = sourceImage != nil && !hasBegunAnnotation
+            ? "标注前：选择工具拖动内部移动截图区域，拖动四边或四角调整宽高；点击标注工具开始编辑"
+            : "选择工具可移动、缩放标注 · 双击文字编辑 · 输入时 ↩ 换行、⌘↩ 结束输入 · ⌘S 保存 · Esc 退出"
         scrollButton?.isEnabled = canvas.annotationCount == 0
         scrollButton?.toolTip = canvas.annotationCount > 0 ? "撤销或清除全部标注后可进入滚动截图" : "进入后在选区内缓慢向下滚动"
     }
@@ -236,6 +288,27 @@ final class CaptureReviewController: NSViewController {
     private func setStatus(_ message: String) {
         status.stringValue = message
         positionStatusBadge()
+    }
+
+    private func adjustRegion(to rect: CGRect, finished: Bool) {
+        guard let sourceImage, !hasBegunAnnotation else { return }
+        if rect != selectionRect {
+            let crop = ScreenGeometry.pixelCrop(selection: rect, displayFrame: CGRect(origin: .zero, size: displaySize),
+                                                pixelSize: CGSize(width: sourceImage.width, height: sourceImage.height))
+            guard !crop.isEmpty, let image = sourceImage.cropping(to: crop) else { return }
+            selectionRect = rect
+            scroll.frame = rect
+            canvas.replaceBaseImage(image, displayWidth: rect.width)
+            scroll.contentView.scroll(to: .zero)
+            regionAdjustment?.selectionRect = rect
+            onRegionChange?(rect)
+            updateStatus()
+        }
+        if finished {
+            if let toolbarContent, let palette { anchorToolbar(content: toolbarContent, palette: palette) }
+            positionToolbar()
+            if copyAfterAdjustment { copyImage(completing: false) }
+        }
     }
 
     override func viewDidAppear() {
@@ -286,18 +359,4 @@ final class CaptureReviewController: NSViewController {
         }
     }
 
-    private func requestText(at point: CGPoint) {
-        guard let window = view.window else { return }
-        let alert = NSAlert()
-        alert.messageText = "添加文字"
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 350, height: 28))
-        field.placeholderString = "输入标注内容"
-        alert.accessoryView = field
-        alert.addButton(withTitle: "添加")
-        alert.addButton(withTitle: "取消")
-        alert.beginSheetModal(for: window) { [weak self] response in
-            if response == .alertFirstButtonReturn { self?.canvas.addText(field.stringValue, at: point) }
-        }
-        alert.window.makeFirstResponder(field)
-    }
 }

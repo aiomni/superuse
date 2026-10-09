@@ -7,6 +7,11 @@ struct CaptureSelection {
     let snapshot: ScreenSnapshot
 }
 
+struct CaptureReviewResult {
+    let action: CaptureReviewAction
+    let target: CaptureTarget
+}
+
 @MainActor
 final class SelectionWindow: NSWindow {
     var onCancel: (() -> Void)?
@@ -23,8 +28,8 @@ final class SelectionWindow: NSWindow {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard acceptsScreenshotKeys else { return false }
         if handleScreenshotKey(event) { return true }
+        guard acceptsScreenshotKeys else { return false }
         return super.performKeyEquivalent(with: event)
     }
 
@@ -38,6 +43,17 @@ final class SelectionWindow: NSWindow {
     }
 
     private func handleScreenshotKey(_ event: NSEvent) -> Bool {
+        if attachedSheet == nil, let editor = firstResponder as? AnnotationTextView {
+            if editor.handleKey(event) { return true }
+            guard event.type == .keyDown, !editor.hasMarkedText() else { return false }
+            let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+            if event.keyCode == 53 && modifiers.isEmpty { onCancel?(); return true }
+            if ([UInt16(1), 35].contains(event.keyCode) && modifiers == [.command]) ||
+                (event.keyCode == 8 && modifiers == [.command, .shift]) {
+                return handleReviewKey?(event) ?? false
+            }
+            return false
+        }
         guard acceptsScreenshotKeys else { return false }
         if handleSelectionKey?(event) == true { return true }
         guard event.type == .keyDown else { return false }
@@ -100,13 +116,22 @@ final class SelectionController {
     }
 
     func review(image: CGImage, selection: CaptureSelection, allowsScrolling: Bool,
-                copyAutomatically: Bool, onPin: ((CGImage) throws -> Void)? = nil) async -> CaptureReviewAction {
+                copyAutomatically: Bool, onPin: ((CGImage, CaptureTarget) throws -> Void)? = nil) async -> CaptureReviewResult {
         guard let window = overlays.first(where: { $0.frame == selection.snapshot.appKitFrame }),
-              let view = window.contentView as? SelectionView else { return .done }
+              let view = window.contentView as? SelectionView else { return CaptureReviewResult(action: .done, target: selection.target) }
+        var target = selection.target
         let rect = selection.target.rect.offsetBy(dx: -selection.snapshot.display.frame.minX,
                                                  dy: -selection.snapshot.display.frame.minY)
         let controller = CaptureReviewController(image: image, selectionRect: rect,
-                                                 displaySize: view.bounds.size, allowsScrolling: allowsScrolling, onPin: onPin)
+                                                 displaySize: view.bounds.size, allowsScrolling: allowsScrolling,
+                                                 onPin: onPin.map { pin in { image in try pin(image, target) } },
+                                                 sourceImage: allowsScrolling ? selection.snapshot.image : nil,
+                                                 copyAfterAdjustment: copyAutomatically)
+        controller.onRegionChange = { [weak view] rect in
+            target = CaptureTarget(kind: .region, rect: rect.offsetBy(dx: selection.snapshot.display.frame.minX,
+                                                                    dy: selection.snapshot.display.frame.minY))
+            view?.setReviewSelection(rect)
+        }
         reviewController = controller
         window.handleReviewKey = { [weak controller] in
             controller?.view.performKeyEquivalent(with: $0) ?? false
@@ -117,13 +142,15 @@ final class SelectionController {
             reviewCompletion = nil
             completion?.resume(returning: action)
         }
+        view.setReviewSelection(rect)
         view.showReview(controller.view)
         overlays.forEach { $0.orderFrontRegardless() }
         window.makeKey()
         window.makeFirstResponder(controller.view)
         NSApp.activate()
         if copyAutomatically { controller.copyImage(completing: false) }
-        return await withCheckedContinuation { reviewCompletion = $0 }
+        let action = await withCheckedContinuation { reviewCompletion = $0 }
+        return CaptureReviewResult(action: action, target: target)
     }
 
     func suspend() { overlays.forEach { $0.orderOut(nil) } }
@@ -155,6 +182,7 @@ final class SelectionView: NSView {
     private var frozen = false
     private var highlighted = false
     private var review: NSView?
+    private var reviewSelection: CGRect?
     private var tracking: NSTrackingArea?
     var onSelect: ((CaptureTarget) -> Void)?
 
@@ -206,6 +234,12 @@ final class SelectionView: NSView {
         review = view
         view.frame = bounds
         addSubview(view)
+        needsDisplay = true
+    }
+
+    func setReviewSelection(_ rect: CGRect) {
+        reviewSelection = rect
+        highlighted = true
         needsDisplay = true
     }
 
@@ -287,7 +321,7 @@ final class SelectionView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         image.draw(in: bounds, from: .zero, operation: .copy, fraction: 1, respectFlipped: true, hints: nil)
-        let selection = state.target.rect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
+        let selection = reviewSelection ?? state.target.rect.offsetBy(dx: -displayFrame.minX, dy: -displayFrame.minY)
         let shade = NSBezierPath(rect: bounds)
         if highlighted { shade.appendRect(selection) }
         shade.windingRule = .evenOdd

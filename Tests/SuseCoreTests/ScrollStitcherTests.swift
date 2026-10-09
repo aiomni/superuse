@@ -56,7 +56,7 @@ private func rgba(_ image: CGImage) -> Data {
     let moving = await stitcher.ingest(crop(source, y: 80))
     let stable = await stitcher.ingest(crop(source, y: 80))
     #expect(stationary == .unchanged)
-    #expect(moving == .unchanged)
+    #expect(moving == .settling)
     #expect(stable == .appended(height: 400, frames: 2))
 }
 

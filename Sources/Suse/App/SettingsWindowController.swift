@@ -127,7 +127,7 @@ final class SettingsWindowController: NSWindowController, NSTableViewDataSource,
     private func generalPage() -> NSView {
         let recording = permissionRow("屏幕录制", subtitle: "用于截取屏幕、窗口和滚动内容。",
                                       symbol: "viewfinder", destination: "Privacy_ScreenCapture")
-        let accessibility = permissionRow("辅助功能", subtitle: "用于将历史内容粘贴回原应用。",
+        let accessibility = permissionRow("辅助功能", subtitle: "用于自动滚动截图，以及将历史内容粘贴回原应用。",
                                           symbol: "hand.point.up.left", destination: "Privacy_Accessibility")
         return UI.settingsPage("通用", subtitle: "从菜单栏或快捷键访问你的工具。", controls: [
             UI.groupedRows([LoginItemSettingsView()]),
