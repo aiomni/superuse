@@ -5,12 +5,12 @@ enum SQLiteValue {
     case text(String), blob(Data), integer(Int), real(Double), null
 }
 
-struct ClipboardStorageError: LocalizedError {
+struct SQLiteStorageError: LocalizedError {
     let message: String
     var errorDescription: String? { message }
 }
 
-/// Owned by ClipboardDisk. Statements never escape a synchronous database operation.
+/// Actor-owned system SQLite connection. Statements never escape a synchronous database operation.
 final class SQLiteDatabase {
     private let handle: OpaquePointer
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
@@ -22,7 +22,7 @@ final class SQLiteDatabase {
         try files.setAttributes([.posixPermissions: 0o700], ofItemAtPath: url.deletingLastPathComponent().path)
         if !files.fileExists(atPath: url.path) {
             guard files.createFile(atPath: url.path, contents: nil, attributes: [.posixPermissions: 0o600]) else {
-                throw ClipboardStorageError(message: "无法创建剪贴板历史文件。")
+                throw SQLiteStorageError(message: "无法创建本地数据文件。")
             }
         }
         try files.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
@@ -30,7 +30,7 @@ final class SQLiteDatabase {
         let result = sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOMUTEX, nil)
         guard result == SQLITE_OK, let connection else {
             if let connection { sqlite3_close(connection) }
-            throw ClipboardStorageError(message: "无法打开剪贴板历史文件。")
+            throw SQLiteStorageError(message: "无法打开本地数据文件。")
         }
         handle = connection
         sqlite3_busy_timeout(handle, 5_000)
@@ -93,7 +93,7 @@ final class SQLiteDatabase {
     private func withStatement<T>(_ sql: String, _ values: [SQLiteValue], body: (OpaquePointer) throws -> T) throws -> T {
         var statement: OpaquePointer?
         try check(sqlite3_prepare_v2(handle, sql, -1, &statement, nil))
-        guard let statement else { throw ClipboardStorageError(message: "无法读取剪贴板历史。") }
+        guard let statement else { throw SQLiteStorageError(message: "无法读取本地数据。") }
         defer { sqlite3_finalize(statement) }
         for (offset, value) in values.enumerated() {
             let index = Int32(offset + 1)
@@ -116,7 +116,7 @@ final class SQLiteDatabase {
 
     private func check(_ result: Int32) throws {
         guard result == SQLITE_OK || result == SQLITE_ROW || result == SQLITE_DONE else {
-            throw ClipboardStorageError(message: "剪贴板存储失败：\(String(cString: sqlite3_errmsg(handle)))")
+            throw SQLiteStorageError(message: "本地存储失败：\(String(cString: sqlite3_errmsg(handle)))")
         }
     }
 }

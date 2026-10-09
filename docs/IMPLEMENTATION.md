@@ -21,7 +21,7 @@ superuse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**
 - `LoginItemSettingsView` 通过 `SMAppService.mainApp` 管理当前应用的登录项，以系统状态为准，不另存 UserDefaults 开关；注册失败恢复实际状态，等待批准时提供系统设置入口。`LoginItemService` 隔离系统调用，测试替身不会注册真实登录项。`AppLaunchContext` 识别系统登录启动事件，保留菜单栏功能并跳过工具箱自动展示。
 - `mainApp` 首次查询可能因没有登录项记录而返回 `.notFound`。设置页仍允许用户打开开关，届时调用 `register()`；打开设置和刷新状态都不会自动注册。注册失败展示系统错误，并保留重试入口。
 - `Shared`：功能接口、快捷键注册、设置存储和少量原生 UI 工具。
-- `Features/Clipboard`、`Features/Screenshot`、`Features/Pins`：各自持有状态、UI、服务，不相互调用；组合根通过共享的 `PinPresenting` 协议接入 Pin。
+- `Features/Clipboard`、`Features/Screenshot`、`Features/Pins`、`Features/SystemMonitor`：各自持有状态、UI、服务，不相互调用；组合根通过共享的 `PinPresenting` 协议接入 Pin。
 - 功能通过 `FeatureModule` 提供命令和设置页。共享层不感知具体功能。
 - `CaptureSelectionState` 只处理坐标命中、点击 / 拖动和确认状态；`SelectionController` 管理冻结的屏幕覆盖层；`CaptureReviewController` 管理原位标注和导出；`ScreenshotModule` 串联选择、预览与滚动会话。
 - `PinStore` 持有会话快照、内容预算和显隐 / 穿透状态；`PinWindowController` 使用带原生标题栏的非激活 `NSPanel` 呈现图片或可直接编辑的纯文本。文字修改即时更新 Pin 自身快照和资源占用，不回写历史条目；每个窗口独立维护原生撤销，输入超预算时保留已接受内容。窗口参考 Preview，隐藏重复标题，使用系统 `NSToolbar` 和居中图片画布；宽度不足 480 pt 时隐藏缩放组，统一从「更多」进入，避免溢出菜单再嵌套「更多」。截图通过最终标注渲染结果创建 Pin，剪贴板直接使用所选条目，不经系统剪贴板中转。截图抑制 token 与用户隐藏状态分开保存；结束、取消和失败统一释放 token。菜单栏独立提供穿透恢复入口。
@@ -56,3 +56,21 @@ superuse 是 macOS 26+ 菜单栏应用。macOS 原生桌面 UI 使用 **AppKit**
 - [NSGlassEffectView](https://developer.apple.com/documentation/appkit/nsglasseffectview)
 - [NSGlassEffectContainerView](https://developer.apple.com/documentation/appkit/nsglasseffectcontainerview)
 - [NSButton.BezelStyle.glass](https://developer.apple.com/documentation/appkit/nsbutton/bezelstyle-swift.enum/glass)
+
+## 多次采样
+
+- 系统监控菜单栏按文字和指标范围计算紧凑宽度，主指标与附加指标去重组合。展开、关闭与调整采样间隔只调度下一次读取，不清空内核计数器；真实暂停、睡眠和启动才重建基准，取消中的读数结束后再继续。
+- 最近最多 10 个快照用于中位数统计；CPU 趋势仍保留 60 个实时样本。无效读数不作为零参与统计，当前指标读取失败时保留不可用状态；tooltip 提供实时值、有效次数和最小 / 最大范围。
+
+- 系统监控 Popover 的根视图和滚动视口不绘制整面不透明底色，外层材质交给 AppKit，避免遮住系统 Liquid Glass。CPU / 内存内容分组保持可读底色，操作按钮继续复用玻璃容器；不在指标后额外叠加玻璃效果。
+
+- 网络速率解析 `NET_RT_IFLIST2` 混合消息时先读取共用的四字节长度 / 版本 / 类型，地址消息按长度跳过，仅对接口统计读取完整 `if_msghdr2`。避免较短的地址消息触发整次读取失败；接口列表增长时有限重试，空闲有效读数为零而非不可用。
+
+
+## 系统监控桌面窗口（2026-10-09）
+
+- 菜单栏、快捷面板和桌面窗口共用采样器。`monitor.window` 独立配置快捷键；窗口可见时每秒采样，后台默认 5 秒。默认启用最近 24 小时本机历史，关闭记录不删除已有记录；睡眠期间留空。
+- 桌面窗口参照系统设置的电池页面，复用设置页的 `NSSplitViewController`：彩色图标侧栏、原生选中态、系统工具栏和无描边内容分组。六项总览按三列两行排列；CPU / 内存进程列表位于图表下方。玻璃只用于导航与控制，图表保持可读底色。
+- 曲线使用不会超调的单调三次插值，配合渐变面积、柔光、最新点和可选峰值脉冲。悬停数值与曲线插值一致，缺失段不插值。点击聚合峰值读取原始时间的快照；框选、平移、时间范围、暂停、返回实时和单图展开共用页面状态。
+- 低层 SQLite 移至 Shared，由剪贴板与监控各自的 actor 持有独立连接。监控原始记录保留 24 小时、最多 86,401 条；30 秒聚合保留实际采样时长、最小 / 最大、均值和原始峰值时间。短区间及裁切边缘读取原始记录，较老的桌面缓存按桶压缩，退出等待已接收写入。
+- libproc 只保存 CPU / 内存各 Top 5 的去重快照：名称、PID、启动时间、CPU 和内存。CPU ticks 按 Mach timebase 转换为纳秒并按整机算力归一化。PID 重用不会串接历史；退出进程可回看已保存数据，未进入 Top 时留空。不保存参数、文件路径或连接明细，不加入网络诊断。

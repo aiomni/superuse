@@ -30,7 +30,9 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     }
 
     private func configureFeatures() {
-        features = [ScreenshotModule(settings: settings, pins: pins), ClipboardModule(settings: settings, pins: pins), pins]
+        let monitor = SystemMonitorModule(settings: settings)
+        monitor.onSettings = { [weak self] in self?.showSettingsSection("monitor") }
+        features = [ScreenshotModule(settings: settings, pins: pins), ClipboardModule(settings: settings, pins: pins), pins, monitor]
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -109,8 +111,12 @@ final class AppCoordinator: NSObject, NSApplicationDelegate {
     @objc private func invokeMenu(_ sender: NSMenuItem) { menuActions[sender.tag]() }
 
     @objc private func showSettings() {
+        showSettingsSection(nil)
+    }
+
+    private func showSettingsSection(_ featureID: String?) {
         if settingsWindow == nil { settingsWindow = SettingsWindowController(features: features, hub: hub) }
-        settingsWindow?.show()
+        settingsWindow?.show(featureID: featureID)
     }
 
     private func showDashboard() {

@@ -4,7 +4,7 @@
 
 # superuse
 
-A small toolbox in your Mac's menu bar. Capture and annotate screenshots, save long pages, and find the text or image you copied earlier.
+A small toolbox in your Mac's menu bar. Capture and annotate screenshots, save long pages, find the text or image you copied earlier, and keep an eye on system performance.
 
 **Requires macOS 26 or later.** The app's interface is currently in Simplified Chinese.
 
@@ -17,6 +17,7 @@ superuse is a prototype. Stored data formats may change between builds without m
 - **Capture a long page.** Scroll through the content yourself while superuse combines it into one image.
 - **Find your clipboard history.** Search copied text and images, edit text, and copy or paste an earlier entry.
 - **Pin a reference to your screen.** Keep screenshots, clipboard images, and plain text in floating windows while you work.
+- **Monitor your Mac.** See CPU, memory, GPU, network speed, disk activity and capacity, battery, temperatures, and thermal pressure in a native menu bar panel or a desktop window with history charts and high-usage processes.
 - **Make it fit your workflow.** Customize shortcuts, pause clipboard recording, and choose whether to launch at login.
 
 ## Getting started
@@ -30,6 +31,7 @@ The compact toolbox lists each action with its current shortcut. Click a row to 
 | Control + Option + Space | Open the toolbox |
 | Shift + Command + A | Start a screenshot |
 | Control + Option + V | Show or hide clipboard history |
+| Control + Option + M | Show or hide system monitor |
 
 Change shortcuts in Settings → Shortcuts. Press Delete while recording a shortcut to disable it, or Esc to cancel. Conflicting shortcuts are reported in settings.
 
@@ -101,6 +103,20 @@ Pins stay above ordinary app windows and remain available across Spaces. They ar
 Desktop Pins last only for the current session and are cleared when you quit. The floating windows are not restored when saved clipboard history is loaded. Automatic history eviction and edits leave existing Pins unchanged. Explicitly deleting a history entry closes its Pins; clearing history closes all clipboard-derived Pins. Closing a Pin does not delete its history entry.
 
 You can keep up to **16 Pins** open, within a **256 MiB content-memory budget**, with images up to **48 million pixels**. At a limit, close some Pins before creating another. Text edits also respect the shared content budget; an oversized edit is rejected while keeping the previous text. Existing Pins are not automatically evicted.
+
+## System monitor
+
+The separate system monitor item in the menu bar shows CPU usage by default. Click it or press **Control + Option + M** to open the panel; press the shortcut again or Esc to close it. The toolbox and the main superuse menu also offer **System Monitor (显示系统监控)**.
+
+The panel includes a CPU trend for the latest 60 samples, memory pressure, GPU utilization, download/upload speeds, disk read/write speeds, startup disk space, battery charge, CPU/GPU temperature averages, fan speeds, and the system's thermal pressure. Use **Activity Monitor (活动监视器)** to inspect individual processes in the system app. Hover over a metric for details, including per-core CPU load, compressed memory, swap, and fan speeds. Unsupported or temporarily unavailable readings show a dash with an explanation in their tooltip.
+
+In Settings → System Monitor, choose a primary metric and combine additional CPU, memory, network speed, GPU, CPU temperature, or battery metrics, or show only an icon. Menu bar text reserves compact space to avoid shifting as percentages change; network speeds use B/K/M/G/T for B/s through TiB/s. Choose live readings or the median of the latest 5 or 10 samples (5 by default); hover to see the current reading, valid sample count, and range. The expanded panel always shows live readings. Adjust background sampling to 3, 5, or 10 seconds, or hide the item. Its shortcut still works when hidden. Background sampling defaults to 5 seconds. Opening the panel or desktop window samples every second; temperatures refresh every 3 seconds and disk capacity every 30 seconds. Sampling continues in the background while local history is enabled. It pauses during sleep, or when history is disabled and all monitor views and its menu bar item are hidden.
+
+Open **打开监控窗口** from the toolbox, main menu, or the panel's window button. Assign its independent shortcut in Settings → Shortcuts; **Control + Option + M** keeps opening the quick panel. The desktop window remembers its size and position and supports optional always-on-top.
+
+Choose overview or a specific metric, then select 5 minutes, 15 minutes, 1 hour, 6 hours, or 24 hours. Charts offer glowing gradient curves or pulse bars, linked hover readings, click-to-lock actual peak samples, drag-to-zoom, Option-drag to pan, and Command-scroll to zoom. Expand a chart for more space, hide individual lines through their legend, or pause the view while collection continues. The pause button changes to **Resume Updates (继续更新)** while paused. **Return to Live (返回实时)** appears only when viewing a historical sample or time range. CPU and memory pages show searchable, sortable high-usage processes; selecting a historical peak restores that sample's process list, including saved readings from exited processes. Double-click a process to inspect the periods when it entered the Top list. Missing readings and sleep intervals remain gaps.
+
+Network speeds sum physical Ethernet/Wi-Fi interfaces, excluding VPN and virtual interfaces to avoid double-counting. GPU, temperature, and fan readings depend on hardware and driver support. GPU readings can be affected by another monitor polling the same driver. Recent system metrics and CPU/memory Top 5 process snapshots are saved locally for up to 24 hours by default. Process records contain name, PID, start time, CPU and memory usage; they exclude command-line arguments, file paths, and connections. The monitor database is not encrypted, uses private file permissions, and sends nothing to a server. Disable history recording in Settings to stop new records; saved records expire after 24 hours.
 
 ## Permissions and privacy
 

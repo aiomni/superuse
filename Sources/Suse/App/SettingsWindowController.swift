@@ -27,7 +27,17 @@ final class SettingsWindowController: NSWindowController, NSTableViewDataSource,
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
 
-    func show() { showWindow(nil); window?.center(); NSApp.activate() }
+    func show(featureID: String? = nil) {
+        if let featureID { selectFeature(featureID) }
+        showWindow(nil)
+        window?.center()
+        NSApp.activate()
+    }
+
+    func selectFeature(_ id: String) {
+        guard let index = features.firstIndex(where: { $0.id == id }) else { return }
+        sidebar.selectRowIndexes(IndexSet(integer: index + 2), byExtendingSelection: false)
+    }
     func windowWillClose(_ notification: Notification) { window?.makeFirstResponder(nil); hub.resumeAfterRecording() }
 
     private func build() {

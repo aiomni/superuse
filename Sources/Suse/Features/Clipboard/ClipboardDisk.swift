@@ -2,6 +2,11 @@ import CryptoKit
 import Foundation
 import SuseCore
 
+struct ClipboardStorageError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 /// Serializes incremental writes and reads. No original clipboard content is cached by the UI.
 actor ClipboardDisk {
     private let url: URL

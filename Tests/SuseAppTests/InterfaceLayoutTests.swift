@@ -19,7 +19,7 @@ struct InterfaceLayoutTests {
         let settings = SettingsStore(defaults: UserDefaults(suiteName: suite)!)
         defer { settings.defaults.removePersistentDomain(forName: suite) }
         let pins = PinsModule(showsWindows: false)
-        let features: [any FeatureModule] = [ScreenshotModule(settings: settings, pins: pins), ClipboardModule(settings: settings, pins: pins), pins]
+        let features: [any FeatureModule] = [ScreenshotModule(settings: settings, pins: pins), ClipboardModule(settings: settings, pins: pins), pins, SystemMonitorModule(settings: settings, showsUI: false)]
         let hub = ShortcutHub(settings: settings)
         let dashboard = DashboardWindowController(features: features, hub: hub, openSettings: {})
         let preferences = SettingsWindowController(features: features, hub: hub)
@@ -31,7 +31,7 @@ struct InterfaceLayoutTests {
             let commands = try #require(descendants(content).first { $0.accessibilityIdentifier() == "dashboard-commands" } as? NSTableView)
             let commandScroll = try #require(commands.enclosingScrollView)
             #expect(commands.numberOfRows == features.flatMap(\.commands).count)
-            #expect(content.frame.width <= 460 && content.frame.height < 300)
+            #expect(content.frame.width <= 460 && content.frame.height <= CGFloat(features.flatMap(\.commands).count) * commands.rowHeight + 80)
             #expect(!descendants(content).contains { $0 is NSGlassEffectView })
             #expect(content.bounds.contains(content.convert(commandScroll.bounds, from: commandScroll)))
             var shortcutEdges: [CGFloat] = []
@@ -50,7 +50,9 @@ struct InterfaceLayoutTests {
             settingsWindow.setContentSize(CGSize(width: 740, height: 510))
             let settingsContent = try #require(settingsWindow.contentView)
             let sidebar = try #require(descendants(settingsContent).first { $0 is NSTableView } as? NSTableView)
-            for row in [0, 2, 3, 4] {
+            preferences.selectFeature("monitor")
+            #expect(sidebar.selectedRow == 5)
+            for row in [0, 2, 3, 4, 5] {
                 sidebar.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 settingsContent.layoutSubtreeIfNeeded()
                 let page = try #require(descendants(settingsContent).compactMap { $0 as? NSScrollView }
@@ -61,6 +63,95 @@ struct InterfaceLayoutTests {
                 #expect(!descendants(document).contains { $0 is NSGlassEffectView })
                 try render(settingsWindow, named: "settings-\(row)-\(name)")
             }
+        }
+    }
+
+    @Test func systemMonitorFitsSmallScreensAndKeepsMetricsOutsideGlass() throws {
+        _ = NSApplication.shared
+        let controller = SystemMonitorViewController()
+        controller.loadViewIfNeeded()
+        var snapshot = SystemMetricsSnapshot()
+        snapshot.cpu = 0.98
+        snapshot.coreLoads = Array(repeating: 0.98, count: 32)
+        snapshot.memory = SystemMemory(used: 120 * 1_024 * 1_024 * 1_024, total: 128 * 1_024 * 1_024 * 1_024,
+                                       compressed: 8 * 1_024 * 1_024 * 1_024, swap: 0, pressure: 2)
+        snapshot.gpu = 1
+        snapshot.network = SystemIORate(incoming: 100_000_000, outgoing: 100_000_000)
+        snapshot.diskIO = snapshot.network
+        snapshot.diskSpace = SystemDiskSpace(total: 1_000_000_000_000, available: 500_000_000_000)
+        snapshot.battery = SystemBattery(fraction: 1, charging: false, pluggedIn: true)
+        snapshot.cpuTemperature = 99
+        snapshot.gpuTemperature = 80
+        snapshot.fanRPM = [5_000, 5_000]
+        snapshot.thermalState = 2
+        snapshot.sampledAt = Date()
+        for (name, appearance) in appearances {
+            for height in [320.0, 440.0] {
+                let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: height),
+                                      styleMask: .borderless, backing: .buffered, defer: false)
+                window.appearance = NSAppearance(named: appearance)
+                window.contentView = controller.view
+                window.setContentSize(CGSize(width: 400, height: height))
+                controller.render(snapshot, history: (0..<60).map { Double($0) / 60 })
+                let content = controller.view
+                content.layoutSubtreeIfNeeded()
+                let scroll = try #require(descendants(content).compactMap { $0 as? NSScrollView }.first)
+                #expect(content.bounds.contains(content.convert(scroll.bounds, from: scroll)))
+                #expect(scroll.frame.height > 160)
+                let document = try #require(scroll.documentView)
+                #expect(abs(document.frame.width - scroll.contentView.bounds.width) < 1)
+                #expect(document.frame.height >= 340)
+                #expect(!descendants(document).contains { $0 is NSGlassEffectView })
+                let fields = descendants(document).compactMap { $0 as? NSTextField }
+                #expect(fields.allSatisfy {
+                    let rect = document.convert($0.bounds, from: $0)
+                    return rect.minX >= -1 && rect.maxX <= document.bounds.maxX + 1
+                })
+                let buttons = descendants(content).compactMap { $0 as? NSButton }
+                #expect(buttons.count == 4)
+                #expect(buttons.allSatisfy { content.bounds.contains(content.convert($0.bounds, from: $0)) })
+                #expect(buttons.allSatisfy { $0.frame.width >= 28 && $0.frame.height >= 28 })
+                let cpu = try #require(descendants(document).first { $0.accessibilityIdentifier() == "monitor-cpu" })
+                let memory = try #require(descendants(document).first { $0.accessibilityIdentifier() == "monitor-memory" })
+                #expect(cpu.frame.width >= 170 && memory.frame.width >= 170)
+                #expect(abs(cpu.frame.width - memory.frame.width) < 1)
+                try render(window, named: "monitor-\(Int(height))-\(name)")
+                // Unsupported hardware keeps the same row layout and exposes an explanation.
+                var missing = SystemMetricsSnapshot()
+                missing.notes["temperature"] = "此设备未提供传感器"
+                controller.render(missing, history: [nil])
+                content.layoutSubtreeIfNeeded()
+                #expect(descendants(document).first { $0.accessibilityIdentifier() == "monitor-temperature" }?.toolTip?.contains("此设备未提供传感器") == true)
+            }
+        }
+    }
+
+    @Test func monitorContentDoesNotPaintOverTheNativePopoverBackdrop() throws {
+        _ = NSApplication.shared
+        let controller = SystemMonitorViewController()
+        controller.loadViewIfNeeded()
+        // Render the root's background pass onto a synthetic backdrop. Native material
+        // is drawn below this pass; a full-window fill would erase these colors.
+        for (_, appearance) in appearances {
+            let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 400, pixelsHigh: 440,
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB,
+                bytesPerRow: 0, bitsPerPixel: 0))
+            let context = try #require(NSGraphicsContext(bitmapImageRep: bitmap))
+            var backdrop: NSColor?
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = context
+            NSAppearance(named: appearance)?.performAsCurrentDrawingAppearance {
+                NSColor(calibratedRed: 0.2, green: 0.4, blue: 0.6, alpha: 1).setFill()
+                CGRect(x: 0, y: 0, width: 400, height: 440).fill()
+                backdrop = bitmap.colorAt(x: 4, y: 220)?.usingColorSpace(.deviceRGB)
+                controller.view.draw(controller.view.bounds)
+            }
+            NSGraphicsContext.restoreGraphicsState()
+            let color = try #require(bitmap.colorAt(x: 4, y: 220)?.usingColorSpace(.deviceRGB))
+            let original = try #require(backdrop)
+            #expect(abs(color.redComponent - original.redComponent) < 0.01)
+            #expect(abs(color.greenComponent - original.greenComponent) < 0.01)
+            #expect(abs(color.blueComponent - original.blueComponent) < 0.01)
         }
     }
 

@@ -18,6 +18,7 @@ app_dir="$PWD/dist/$app_name.app"
 mkdir -p "$app_dir/Contents/MacOS" "$app_dir/Contents/Resources"
 cp "$binary_dir/$app_name" "$app_dir/Contents/MacOS/$app_name"
 cp Resources/Info.plist "$app_dir/Contents/Info.plist"
+cp Resources/ThirdPartyNotices.txt "$app_dir/Contents/Resources/ThirdPartyNotices.txt"
 swift scripts/make-icon-v2.swift ".build/$app_name.iconset"
 iconutil --convert icns ".build/$app_name.iconset" --output "$app_dir/Contents/Resources/$app_name.icns"
 # Let codesign derive a certificate-bound requirement; never use an identifier-only requirement.
